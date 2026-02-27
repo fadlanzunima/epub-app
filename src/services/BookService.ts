@@ -7,11 +7,11 @@ import {
   ReadingProgress,
 } from '../types';
 import DatabaseService from './DatabaseService';
-import RNFS from 'react-native-fs';
+import * as FileSystem from 'expo-file-system';
 import { v4 as uuidv4 } from 'uuid';
 
-const BOOKS_DIR = `${RNFS.DocumentDirectoryPath}/books`;
-const COVERS_DIR = `${RNFS.DocumentDirectoryPath}/covers`;
+const BOOKS_DIR = `${FileSystem.documentDirectory}books/`;
+const COVERS_DIR = `${FileSystem.documentDirectory}covers/`;
 
 class BookService {
   async initialize(): Promise<void> {
@@ -20,29 +20,29 @@ class BookService {
   }
 
   private async ensureDirectories(): Promise<void> {
-    const booksDirExists = await RNFS.exists(BOOKS_DIR);
-    if (!booksDirExists) {
-      await RNFS.mkdir(BOOKS_DIR);
+    const booksDirInfo = await FileSystem.getInfoAsync(BOOKS_DIR);
+    if (!booksDirInfo.exists) {
+      await FileSystem.makeDirectoryAsync(BOOKS_DIR, { intermediates: true });
     }
-    const coversDirExists = await RNFS.exists(COVERS_DIR);
-    if (!coversDirExists) {
-      await RNFS.mkdir(COVERS_DIR);
+    const coversDirInfo = await FileSystem.getInfoAsync(COVERS_DIR);
+    if (!coversDirInfo.exists) {
+      await FileSystem.makeDirectoryAsync(COVERS_DIR, { intermediates: true });
     }
   }
 
   async importBook(sourcePath: string, fileType: BookFormat): Promise<Book> {
     const fileName = sourcePath.split('/').pop() || 'unknown';
     const bookId = uuidv4();
-    const destPath = `${BOOKS_DIR}/${bookId}_${fileName}`;
+    const destPath = `${BOOKS_DIR}${bookId}_${fileName}`;
 
     // Copy file to app storage
-    await RNFS.copyFile(sourcePath, destPath);
+    await FileSystem.copyAsync({ from: sourcePath, to: destPath });
 
     // Extract metadata (basic implementation)
     const metadata = await this.extractMetadata(destPath, fileType);
 
     // Generate cover image placeholder
-    const coverPath = `${COVERS_DIR}/${bookId}.jpg`;
+    const coverPath = `${COVERS_DIR}${bookId}.jpg`;
 
     const book: Book = {
       id: bookId,
@@ -64,8 +64,8 @@ class BookService {
   }
 
   private async extractMetadata(
-    filePath: string,
-    fileType: BookFormat,
+    _filePath: string,
+    _fileType: BookFormat,
   ): Promise<{
     title?: string;
     author?: string;
@@ -73,9 +73,6 @@ class BookService {
     totalPages?: number;
   }> {
     // TODO: Implement proper metadata extraction for each format
-    // For EPUB: parse container.xml, OPF file
-    // For PDF: parse PDF info dictionary
-    // For MOBI: parse MOBI header
     return {};
   }
 
@@ -95,11 +92,15 @@ class BookService {
     const book = await DatabaseService.getBookById(id);
     if (book) {
       // Delete file from storage
-      if (await RNFS.exists(book.filePath)) {
-        await RNFS.unlink(book.filePath);
+      const fileInfo = await FileSystem.getInfoAsync(book.filePath);
+      if (fileInfo.exists) {
+        await FileSystem.deleteAsync(book.filePath);
       }
-      if (book.coverImage && (await RNFS.exists(book.coverImage))) {
-        await RNFS.unlink(book.coverImage);
+      if (book.coverImage) {
+        const coverInfo = await FileSystem.getInfoAsync(book.coverImage);
+        if (coverInfo.exists) {
+          await FileSystem.deleteAsync(book.coverImage);
+        }
       }
       // Delete from database
       await DatabaseService.deleteBook(id);

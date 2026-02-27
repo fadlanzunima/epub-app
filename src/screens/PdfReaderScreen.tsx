@@ -1,14 +1,9 @@
-import React, { useState, useRef } from 'react';
-import {
-  View,
-  StyleSheet,
-  Dimensions,
-  TouchableOpacity,
-  Animated,
-} from 'react-native';
-import Pdf from 'react-native-pdf';
+import React, { useState } from 'react';
+import { View, StyleSheet, TouchableOpacity, Animated } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { Text, IconButton, useTheme, Menu, Divider } from 'react-native-paper';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import * as WebBrowser from 'expo-web-browser';
 
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { useStore } from '../hooks/useStore';
@@ -16,22 +11,17 @@ import BookService from '../services/BookService';
 
 type RoutePropType = RouteProp<RootStackParamList, 'PdfReader'>;
 
-const { height } = Dimensions.get('window');
-
 export default function PdfReaderScreen() {
   const route = useRoute<RoutePropType>();
   const navigation = useNavigation();
   const theme = useTheme();
   const { book } = route.params;
   const { readerSettings } = useStore();
-  const pdfRef = useRef<Pdf>(null);
 
   const [controlsVisible, setControlsVisible] = useState(true);
   const [menuVisible, setMenuVisible] = useState(false);
   const [currentPage, setCurrentPage] = useState(book.currentPage || 1);
-  const [totalPages, setTotalPages] = useState(book.totalPages || 0);
-  const [scale, setScale] = useState(1.0);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const fadeAnim = useState(new Animated.Value(1))[0];
 
   const currentTheme =
     readerSettings.theme === 'dark'
@@ -57,29 +47,20 @@ export default function PdfReaderScreen() {
     }).start();
   };
 
-  const handlePageChange = (page: number, total: number) => {
-    setCurrentPage(page);
-    setTotalPages(total);
-    BookService.updateReadingProgress(book.id, page);
-  };
-
   const addBookmark = () => {
-    BookService.addBookmark(
-      book.id,
-      undefined,
-      currentPage,
-      `Page ${currentPage}`,
-    );
+    BookService.addBookmark(book.id, '', currentPage, `Page ${currentPage}`);
     setMenuVisible(false);
   };
 
-  const zoomIn = () => {
-    setScale(Math.min(scale + 0.5, 3.0));
+  const openInBrowser = async () => {
+    await WebBrowser.openBrowserAsync(book.filePath);
+    setMenuVisible(false);
   };
 
-  const zoomOut = () => {
-    setScale(Math.max(scale - 0.5, 0.5));
-  };
+  // For Expo Go, we'll use a simple WebView with Google Docs viewer as fallback
+  const pdfUri = `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(
+    book.filePath,
+  )}`;
 
   return (
     <View
@@ -90,14 +71,10 @@ export default function PdfReaderScreen() {
         activeOpacity={1}
         onPress={showControls}
       >
-        <Pdf
-          ref={pdfRef}
-          source={{ uri: `file://${book.filePath}` }}
-          page={currentPage}
-          scale={scale}
-          onPageChanged={handlePageChange}
-          onError={error => console.error('PDF Error:', error)}
-          style={[styles.pdf, { backgroundColor: currentTheme.background }]}
+        <WebView
+          originWhitelist={['*']}
+          source={{ uri: pdfUri }}
+          style={{ backgroundColor: currentTheme.background }}
         />
       </TouchableOpacity>
 
@@ -126,17 +103,12 @@ export default function PdfReaderScreen() {
                 title="Add Bookmark"
                 leadingIcon="bookmark"
               />
+              <Menu.Item
+                onPress={openInBrowser}
+                title="Open in Browser"
+                leadingIcon="open-in-new"
+              />
               <Divider />
-              <Menu.Item
-                onPress={zoomIn}
-                title="Zoom In"
-                leadingIcon="magnify-plus"
-              />
-              <Menu.Item
-                onPress={zoomOut}
-                title="Zoom Out"
-                leadingIcon="magnify-minus"
-              />
             </Menu>
           </View>
 
@@ -147,9 +119,7 @@ export default function PdfReaderScreen() {
               { backgroundColor: theme.colors.surface },
             ]}
           >
-            <Text style={styles.pageInfo}>
-              Page {currentPage} of {totalPages}
-            </Text>
+            <Text style={styles.pageInfo}>PDF Viewer</Text>
           </View>
         </Animated.View>
       )}
@@ -163,11 +133,6 @@ const styles = StyleSheet.create({
   },
   touchArea: {
     flex: 1,
-  },
-  pdf: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
   },
   controls: {
     position: 'absolute',

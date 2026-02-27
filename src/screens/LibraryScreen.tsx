@@ -17,7 +17,7 @@ import {
   useTheme,
 } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
-import DocumentPicker from 'react-native-document-picker';
+import * as DocumentPicker from 'expo-document-picker';
 
 import { useStore } from '../hooks/useStore';
 import BookService from '../services/BookService';
@@ -35,7 +35,7 @@ function BookCard({ book, onPress }: { book: Book; onPress: () => void }) {
       <View style={styles.coverContainer}>
         {book.coverImage ? (
           <Image
-            source={{ uri: `file://${book.coverImage}` }}
+            source={{ uri: book.coverImage }}
             style={styles.coverImage}
             resizeMode="cover"
           />
@@ -124,13 +124,19 @@ export default function LibraryScreen() {
 
   const handleImportBook = async () => {
     try {
-      const result = await DocumentPicker.pick({
-        type: [DocumentPicker.types.allFiles],
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          'application/epub+zip',
+          'application/pdf',
+          'application/x-mobipocket-ebook',
+        ],
+        copyToCacheDirectory: true,
       });
 
-      if (result && result[0]) {
-        const file = result[0];
-        const extension = file.name?.split('.').pop()?.toLowerCase();
+      if (result.canceled === false && result.assets && result.assets[0]) {
+        const file = result.assets[0];
+        const fileName = file.name || '';
+        const extension = fileName.split('.').pop()?.toLowerCase();
 
         let fileType: BookFormat | null = null;
         if (extension === 'epub') fileType = 'epub';
@@ -145,11 +151,7 @@ export default function LibraryScreen() {
         }
       }
     } catch (error) {
-      if (DocumentPicker.isCancel(error)) {
-        // User cancelled
-      } else {
-        console.error('Error importing book:', error);
-      }
+      console.error('Error importing book:', error);
       setIsLoading(false);
     }
   };

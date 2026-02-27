@@ -11,6 +11,7 @@ import {
 } from 'react-native-paper';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import * as FileSystem from 'expo-file-system';
 
 import { RootStackParamList } from '../navigation/AppNavigator';
 import BookService from '../services/BookService';
