@@ -1,4 +1,4 @@
-export type BookFormat = 'epub' | 'pdf' | 'mobi';
+export type BookFormat = 'epub' | 'pdf' | 'mobi' | 'azw' | 'azw3';
 
 export interface Book {
   id: string;

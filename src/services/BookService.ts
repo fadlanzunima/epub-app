@@ -7,19 +7,29 @@ import {
   ReadingProgress,
 } from '../types';
 import DatabaseService from './DatabaseService';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
+import { Platform } from 'react-native';
 import { v4 as uuidv4 } from 'uuid';
 
-const BOOKS_DIR = `${FileSystem.documentDirectory}books/`;
-const COVERS_DIR = `${FileSystem.documentDirectory}covers/`;
+const BOOKS_DIR = FileSystem.documentDirectory
+  ? `${FileSystem.documentDirectory}books/`
+  : '';
+const COVERS_DIR = FileSystem.documentDirectory
+  ? `${FileSystem.documentDirectory}covers/`
+  : '';
 
 class BookService {
   async initialize(): Promise<void> {
     await DatabaseService.init();
-    await this.ensureDirectories();
+    // Skip directory creation on web - file system not available
+    if (Platform.OS !== 'web') {
+      await this.ensureDirectories();
+    }
   }
 
   private async ensureDirectories(): Promise<void> {
+    if (Platform.OS === 'web' || !BOOKS_DIR || !COVERS_DIR) return;
+
     const booksDirInfo = await FileSystem.getInfoAsync(BOOKS_DIR);
     if (!booksDirInfo.exists) {
       await FileSystem.makeDirectoryAsync(BOOKS_DIR, { intermediates: true });
@@ -33,16 +43,20 @@ class BookService {
   async importBook(sourcePath: string, fileType: BookFormat): Promise<Book> {
     const fileName = sourcePath.split('/').pop() || 'unknown';
     const bookId = uuidv4();
-    const destPath = `${BOOKS_DIR}${bookId}_${fileName}`;
+    const destPath =
+      Platform.OS === 'web' ? sourcePath : `${BOOKS_DIR}${bookId}_${fileName}`;
 
-    // Copy file to app storage
-    await FileSystem.copyAsync({ from: sourcePath, to: destPath });
+    // On native: Copy file to app storage
+    // On web: Keep the original URI (blob/ObjectURL)
+    if (Platform.OS !== 'web') {
+      await FileSystem.copyAsync({ from: sourcePath, to: destPath });
+    }
 
     // Extract metadata (basic implementation)
     const metadata = await this.extractMetadata(destPath, fileType);
 
     // Generate cover image placeholder
-    const coverPath = `${COVERS_DIR}${bookId}.jpg`;
+    const coverPath = Platform.OS === 'web' ? '' : `${COVERS_DIR}${bookId}.jpg`;
 
     const book: Book = {
       id: bookId,
@@ -91,15 +105,18 @@ class BookService {
   async deleteBook(id: string): Promise<void> {
     const book = await DatabaseService.getBookById(id);
     if (book) {
-      // Delete file from storage
-      const fileInfo = await FileSystem.getInfoAsync(book.filePath);
-      if (fileInfo.exists) {
-        await FileSystem.deleteAsync(book.filePath);
-      }
-      if (book.coverImage) {
-        const coverInfo = await FileSystem.getInfoAsync(book.coverImage);
-        if (coverInfo.exists) {
-          await FileSystem.deleteAsync(book.coverImage);
+      // On native: Delete file from storage
+      // On web: Skip file system operations
+      if (Platform.OS !== 'web') {
+        const fileInfo = await FileSystem.getInfoAsync(book.filePath);
+        if (fileInfo.exists) {
+          await FileSystem.deleteAsync(book.filePath);
+        }
+        if (book.coverImage) {
+          const coverInfo = await FileSystem.getInfoAsync(book.coverImage);
+          if (coverInfo.exists) {
+            await FileSystem.deleteAsync(book.coverImage);
+          }
         }
       }
       // Delete from database
@@ -133,21 +150,19 @@ class BookService {
     }
   }
 
-  // Categories
+  // Category management
   async getCategories(): Promise<Category[]> {
     return DatabaseService.getCategories();
   }
 
   async createCategory(name: string, color: string): Promise<Category> {
-    const categories = await DatabaseService.getCategories();
     const category: Category = {
       id: uuidv4(),
       name,
       color,
-      sortOrder: categories.length,
+      createdAt: new Date(),
     };
-    await DatabaseService.addCategory(category);
-    return category;
+    return DatabaseService.addCategory(category);
   }
 
   async deleteCategory(id: string): Promise<void> {
@@ -169,40 +184,37 @@ class BookService {
     return DatabaseService.getBooksByCategory(categoryId);
   }
 
-  // Bookmarks
+  // Bookmark management
   async addBookmark(
     bookId: string,
     cfi: string,
-    page?: number,
-    note?: string,
+    title?: string,
   ): Promise<Bookmark> {
     const bookmark: Bookmark = {
       id: uuidv4(),
       bookId,
       cfi,
-      page,
+      title,
       createdAt: new Date(),
-      note,
     };
-    await DatabaseService.addBookmark(bookmark);
-    return bookmark;
+    return DatabaseService.addBookmark(bookmark);
   }
 
   async getBookmarks(bookId: string): Promise<Bookmark[]> {
-    return DatabaseService.getBookmarksByBook(bookId);
+    return DatabaseService.getBookmarksByBookId(bookId);
   }
 
   async deleteBookmark(id: string): Promise<void> {
     await DatabaseService.deleteBookmark(id);
   }
 
-  // Annotations
+  // Annotation management
   async addAnnotation(
     bookId: string,
     cfi: string,
     text: string,
-    color: string,
     note?: string,
+    color?: string,
   ): Promise<Annotation> {
     const annotation: Annotation = {
       id: uuidv4(),
@@ -213,36 +225,28 @@ class BookService {
       color,
       createdAt: new Date(),
     };
-    await DatabaseService.addAnnotation(annotation);
-    return annotation;
+    return DatabaseService.addAnnotation(annotation);
   }
 
   async getAnnotations(bookId: string): Promise<Annotation[]> {
-    return DatabaseService.getAnnotationsByBook(bookId);
+    return DatabaseService.getAnnotationsByBookId(bookId);
   }
 
   async deleteAnnotation(id: string): Promise<void> {
     await DatabaseService.deleteAnnotation(id);
   }
 
-  // Reading Progress Tracking
-  async trackReadingSession(
-    bookId: string,
-    pagesRead: number,
-    timeSpent: number,
-  ): Promise<void> {
-    const progress: ReadingProgress = {
-      id: uuidv4(),
-      bookId,
-      date: new Date(),
-      pagesRead,
-      timeSpent,
-    };
-    await DatabaseService.addReadingProgress(progress);
+  // Reading progress tracking
+  async updateReadingTime(bookId: string, timeSpent: number): Promise<void> {
+    const book = await DatabaseService.getBookById(bookId);
+    if (book) {
+      book.readingTime += timeSpent;
+      await DatabaseService.updateBook(book);
+    }
   }
 
   async getReadingStats(): Promise<{ totalTime: number; totalPages: number }> {
-    return DatabaseService.getTotalReadingStats();
+    return DatabaseService.getReadingStats();
   }
 }
 

@@ -1,4 +1,18 @@
 {
-  "name": "EReaderApp",
-  "displayName": "EReaderApp"
+  "expo": {
+    "name": "EReaderApp",
+    "slug": "ereader-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ereaderapp"
+    },
+    "android": {
+      "package": "com.ereaderapp"
+    },
+    "plugins": ["expo-sqlite"]
+  }
 }

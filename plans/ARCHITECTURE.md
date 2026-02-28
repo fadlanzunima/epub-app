@@ -6,8 +6,8 @@ A cross-platform e-reader app built with React Native supporting EPUB, MOBI, and
 ## Technology Stack
 
 ### Core Framework
-- **React Native 0.72+** with TypeScript
-- **Expo** or **Bare Workflow** (recommended: Bare for better native library support)
+- **React Native 0.84+** with TypeScript
+- **Expo SDK 55+** - Using Expo Go for rapid development and testing
 
 ### Navigation
 - **React Navigation 6+** (Stack + Tab + Drawer navigators)
@@ -17,9 +17,10 @@ A cross-platform e-reader app built with React Native supporting EPUB, MOBI, and
 - **React Query (TanStack Query)** for server state (if using cloud sync)
 
 ### Database & Storage
-- **WatermelonDB** or **SQLite** with **TypeORM** for local book library
+- **Expo SQLite** for local book library (native SQLite via Expo SDK)
 - **MMKV** for fast key-value storage (settings, reading progress)
-- **React Native FS** for file system operations
+- **Expo FileSystem** for file system operations
+- **React Native AsyncStorage** for persistent app state
 
 ### UI Components
 - **React Native Paper** (Material Design) or **NativeBase**
@@ -40,8 +41,9 @@ A cross-platform e-reader app built with React Native supporting EPUB, MOBI, and
 - Alternative: Convert server-side or use native libraries
 
 ### File Import
-- **react-native-document-picker** - File selection
-- **react-native-fs** - File operations
+- **Expo Document Picker** - File selection via Expo SDK
+- **Expo FileSystem** - File operations via Expo SDK
+- **react-native-fs** - Additional file system operations
 - **react-native-extract-archive** - Handle .epub (zip) files
 
 ### Additional Libraries

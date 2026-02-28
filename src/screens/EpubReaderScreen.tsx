@@ -5,8 +5,10 @@ import {
   Dimensions,
   TouchableOpacity,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
+import * as FileSystem from 'expo-file-system/legacy';
 import {
   Text,
   IconButton,
@@ -46,9 +48,33 @@ export default function EpubReaderScreen() {
   const [toc, setToc] = useState<TocItem[]>([]);
   const [currentLocation, setCurrentLocation] = useState(book.currentCfi || '');
   const [progress, setProgress] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
   const currentTheme = Themes[readerSettings.theme];
+
+  useEffect(() => {
+    // Check if file exists
+    const checkFile = async () => {
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(book.filePath);
+        if (!fileInfo.exists) {
+          throw new Error(`File not found: ${book.filePath}`);
+        }
+        console.log('EPUB file found:', book.filePath, 'Size:', fileInfo.size);
+        setError(null);
+      } catch (err) {
+        const errorMsg =
+          err instanceof Error ? err.message : 'Failed to load EPUB';
+        console.error('Error checking EPUB file:', err);
+        setError(errorMsg);
+      } finally {
+        setLoading(false);
+      }
+    };
+    checkFile();
+  }, [book.filePath]);
 
   useEffect(() => {
     // Auto-hide controls after 3 seconds
@@ -95,6 +121,17 @@ export default function EpubReaderScreen() {
           break;
         case 'selected':
           // Handle text selection for annotation
+          break;
+        case 'console':
+          // Log WebView console messages
+          if (data.level === 'error') {
+            console.error('[WebView]', data.message);
+          } else {
+            console.log('[WebView]', data.message);
+          }
+          break;
+        case 'error':
+          console.error('[WebView Error]', data.message);
           break;
       }
     } catch (e) {
@@ -143,8 +180,9 @@ export default function EpubReaderScreen() {
     <html>
     <head>
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-      <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-      <script src="https://cdnjs.cloudflare.com/ajax/libs/epub.js/0.3.93/epub.min.js"></script>
+      <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob: file:;">
+      <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
       <style>
         body {
           margin: 0;
@@ -163,46 +201,164 @@ export default function EpubReaderScreen() {
     <body>
       <div id="viewer"></div>
       <script>
-        try {
-          var book = ePub('${book.filePath}');
-          var rendition = book.renderTo("viewer", {
-            width: "100%",
-            height: "100%",
-            spread: "none"
-          });
+        function initReader() {
+          console.log('EPUB Reader: Starting initialization');
 
-          rendition.display('${book.currentCfi || ''}');
+          if (!window.ePub) {
+            console.error('EPUB Reader: ePub.js not available yet, retrying...');
+            setTimeout(initReader, 500);
+            return;
+          }
+          if (!window.JSZip) {
+            console.error('EPUB Reader: JSZip not available yet, retrying...');
+            setTimeout(initReader, 500);
+            return;
+          }
 
-          rendition.on("relocated", function(location) {
+          console.log('EPUB Reader: Libraries loaded');
+
+          try {
+            // Use the file path directly
+            var filePath = '${book.filePath}';
+            console.log('EPUB Reader: Opening file:', filePath);
+
+            // Try to fetch the file first to verify access
+            fetch(filePath)
+              .then(response => {
+                console.log('EPUB Reader: Fetch response:', response.status, response.statusText);
+                if (!response.ok) {
+                  throw new Error('HTTP ' + response.status);
+                }
+                return response.arrayBuffer();
+              })
+              .then(arrayBuffer => {
+                console.log('EPUB Reader: File loaded, size:', arrayBuffer.byteLength);
+                // Use the arrayBuffer with epub.js
+                var book = ePub(arrayBuffer);
+                setupBook(book);
+              })
+              .catch(err => {
+                console.error('EPUB Reader: Fetch error:', err.message);
+                // Fallback: try direct file path
+                console.log('EPUB Reader: Trying direct file path...');
+                var book = ePub(filePath);
+                setupBook(book);
+              });
+          } catch(e) {
+            console.error('EPUB Reader: Fatal error:', e.message);
             window.ReactNativeWebView.postMessage(JSON.stringify({
-              type: 'location',
-              cfi: location.start.cfi,
-              progress: location.start.percentage
+              type: 'error',
+              message: e.message
             }));
-          });
+          }
+        }
 
-          book.loaded.navigation.then(function(nav) {
-            window.ReactNativeWebView.postMessage(JSON.stringify({
-              type: 'toc',
-              toc: nav.toc
-            }));
-          });
+        function setupBook(book) {
+          try {
+            var rendition = book.renderTo("viewer", {
+              width: "100%",
+              height: "100%",
+              spread: "none"
+            });
+            console.log('EPUB Reader: Rendition created');
 
-          document.addEventListener('click', function() {
+            rendition.display('${book.currentCfi || ''}');
+            console.log('EPUB Reader: Display called');
+
+            rendition.on("relocated", function(location) {
+              window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: 'location',
+                cfi: location.start.cfi,
+                progress: location.start.percentage
+              }));
+            });
+
+            book.loaded.navigation.then(function(nav) {
+              console.log('EPUB Reader: Navigation loaded');
+              window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: 'toc',
+                toc: nav.toc
+              }));
+            }).catch(function(err) {
+              console.error('EPUB Reader: Navigation error:', err);
+            });
+
+            book.opened.then(function() {
+              console.log('EPUB Reader: Book opened successfully');
+            }).catch(function(err) {
+              console.error('EPUB Reader: Open error:', err);
+            });
+
+            document.addEventListener('click', function() {
+              window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: 'click'
+              }));
+            });
+          } catch(e) {
+            console.error('EPUB Reader: Fatal error:', e.message);
             window.ReactNativeWebView.postMessage(JSON.stringify({
-              type: 'click'
+              type: 'error',
+              message: e.message
             }));
-          });
-        } catch(e) {
-          window.ReactNativeWebView.postMessage(JSON.stringify({
-            type: 'error',
-            message: e.message
-          }));
+          }
+        }
+
+        // Start initialization when page loads
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', initReader);
+        } else {
+          initReader();
         }
       </script>
     </body>
     </html>
   `;
+
+  if (loading) {
+    return (
+      <View
+        style={[
+          styles.container,
+          {
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: currentTheme.background,
+          },
+        ]}
+      >
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View
+        style={[
+          styles.container,
+          {
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: currentTheme.background,
+            padding: 20,
+          },
+        ]}
+      >
+        <Text style={{ color: theme.colors.error, textAlign: 'center' }}>
+          Error loading book:
+        </Text>
+        <Text
+          style={{
+            color: currentTheme.text,
+            textAlign: 'center',
+            marginTop: 8,
+          }}
+        >
+          {error}
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View
@@ -216,16 +372,61 @@ export default function EpubReaderScreen() {
         <WebView
           ref={webviewRef}
           originWhitelist={['*']}
-          source={{ html: htmlContent }}
+          source={{
+            html: htmlContent || '<html><body>Loading...</body></html>',
+          }}
           onMessage={handleWebViewMessage}
           injectedJavaScript={`
+            (function() {
+              // Capture console logs and send to React Native
+              const originalLog = console.log;
+              const originalError = console.error;
+              console.log = function(...args) {
+                originalLog.apply(console, args);
+                window.ReactNativeWebView.postMessage(JSON.stringify({
+                  type: 'console',
+                  level: 'log',
+                  message: args.map(a => String(a)).join(' ')
+                }));
+              };
+              console.error = function(...args) {
+                originalError.apply(console, args);
+                window.ReactNativeWebView.postMessage(JSON.stringify({
+                  type: 'console',
+                  level: 'error',
+                  message: args.map(a => String(a)).join(' ')
+                }));
+              };
+            })();
             document.addEventListener('message', function(e) {
               eval(e.data);
             });
           `}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          onError={e => console.error('WebView error:', e.nativeEvent)}
+          onHttpError={e => console.error('WebView HTTP error:', e.nativeEvent)}
+          onLoadStart={() => console.log('WebView: load start')}
+          onLoadEnd={() => console.log('WebView: load end')}
+          onLoadProgress={e =>
+            console.log('WebView: load progress', e.nativeEvent.progress)
+          }
+          renderError={errorName => (
+            <View
+              style={{
+                flex: 1,
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: 'red' }}>Failed to load: {errorName}</Text>
+            </View>
+          )}
           style={{ backgroundColor: currentTheme.background }}
           allowFileAccess
           allowUniversalAccessFromFileURLs
+          mixedContentMode="always"
+          mediaPlaybackRequiresUserAction={false}
         />
       </TouchableOpacity>
 
@@ -333,7 +534,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 8,
     paddingTop: 40,
-    pointerEvents: 'box-auto',
+    pointerEvents: 'auto',
   },
   title: {
     flex: 1,
@@ -347,7 +548,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingBottom: 20,
-    pointerEvents: 'box-auto',
+    pointerEvents: 'auto',
   },
   progress: {
     fontSize: 14,

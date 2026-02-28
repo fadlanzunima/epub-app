@@ -7,19 +7,12 @@ import {
   TouchableOpacity,
   Image,
 } from 'react-native';
-import {
-  Text,
-  Searchbar,
-  IconButton,
-  FAB,
-  Menu,
-  Divider,
-  useTheme,
-} from 'react-native-paper';
+import { Text, Searchbar, IconButton, FAB, useTheme } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 
-import { useStore } from '../hooks/useStore';
+import { useBooks } from '../hooks/useBooks';
+import { StorageService } from '../services/StorageService';
 import BookService from '../services/BookService';
 import { Book, BookFormat } from '../types';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -27,7 +20,15 @@ import { RootStackParamList } from '../navigation/AppNavigator';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-function BookCard({ book, onPress }: { book: Book; onPress: () => void }) {
+function BookCard({
+  book,
+  onPress,
+  onToggleFavorite,
+}: {
+  book: Book;
+  onPress: () => void;
+  onToggleFavorite: (id: string) => void;
+}) {
   const theme = useTheme();
 
   return (
@@ -78,7 +79,7 @@ function BookCard({ book, onPress }: { book: Book; onPress: () => void }) {
         }
         onPress={e => {
           e.stopPropagation();
-          BookService.toggleFavorite(book.id);
+          onToggleFavorite(book.id);
         }}
       />
     </TouchableOpacity>
@@ -90,31 +91,17 @@ export default function LibraryScreen() {
   const theme = useTheme();
   const {
     books,
-    setBooks,
-    searchQuery,
-    setSearchQuery,
-    isLoading,
-    setIsLoading,
-  } = useStore();
-  const [menuVisible, setMenuVisible] = useState(false);
+    loading: isLoading,
+    refresh: loadBooks,
+    toggleFavorite,
+  } = useBooks();
+  const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
-  const loadBooks = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      await BookService.initialize();
-      const allBooks = await BookService.getAllBooks();
-      setBooks(allBooks);
-    } catch (error) {
-      console.error('Error loading books:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [setBooks, setIsLoading]);
-
   useEffect(() => {
-    loadBooks();
-  }, [loadBooks]);
+    // Initialize storage on mount
+    StorageService.initializeStorage();
+  }, []);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -144,25 +131,37 @@ export default function LibraryScreen() {
         else if (extension === 'mobi') fileType = 'mobi';
 
         if (fileType && file.uri) {
-          setIsLoading(true);
           const book = await BookService.importBook(file.uri, fileType);
-          setBooks([book, ...books]);
-          setIsLoading(false);
+          // Navigate to reader screen after import
+          handleBookPress(book);
         }
       }
     } catch (error) {
       console.error('Error importing book:', error);
-      setIsLoading(false);
     }
   };
 
+  // Helper to serialize book for navigation (Date -> string)
+  const serializeBook = (book: Book): Book => ({
+    ...book,
+    addedAt:
+      book.addedAt instanceof Date
+        ? (book.addedAt.toISOString() as unknown as Date)
+        : book.addedAt,
+    lastReadAt:
+      book.lastReadAt instanceof Date
+        ? (book.lastReadAt.toISOString() as unknown as Date)
+        : book.lastReadAt,
+  });
+
   const handleBookPress = (book: Book) => {
+    const serializedBook = serializeBook(book);
     if (book.fileType === 'epub') {
-      navigation.navigate('EpubReader', { book });
+      navigation.navigate('EpubReader', { book: serializedBook });
     } else if (book.fileType === 'pdf') {
-      navigation.navigate('PdfReader', { book });
+      navigation.navigate('PdfReader', { book: serializedBook });
     } else {
-      navigation.navigate('BookDetail', { book });
+      navigation.navigate('BookDetail', { book: serializedBook });
     }
   };
 
@@ -211,7 +210,11 @@ export default function LibraryScreen() {
           data={filteredBooks}
           keyExtractor={item => item.id}
           renderItem={({ item }) => (
-            <BookCard book={item} onPress={() => handleBookPress(item)} />
+            <BookCard
+              book={item}
+              onPress={() => handleBookPress(item)}
+              onToggleFavorite={toggleFavorite}
+            />
           )}
           contentContainerStyle={styles.list}
           refreshControl={
@@ -220,41 +223,11 @@ export default function LibraryScreen() {
         />
       )}
 
-      <Menu
-        visible={menuVisible}
-        onDismiss={() => setMenuVisible(false)}
-        anchor={
-          <FAB
-            icon="plus"
-            style={[styles.fab, { backgroundColor: theme.colors.primary }]}
-            onPress={() => setMenuVisible(true)}
-          />
-        }
-      >
-        <Menu.Item
-          onPress={() => {
-            setMenuVisible(false);
-            handleImportBook();
-          }}
-          title="Import Book"
-          leadingIcon="file-import"
-        />
-        <Divider />
-        <Menu.Item
-          onPress={() => {
-            setMenuVisible(false);
-          }}
-          title="Sort by Title"
-          leadingIcon="sort-alphabetical-ascending"
-        />
-        <Menu.Item
-          onPress={() => {
-            setMenuVisible(false);
-          }}
-          title="Sort by Recent"
-          leadingIcon="sort-clock-ascending"
-        />
-      </Menu>
+      <FAB
+        icon="plus"
+        style={[styles.fab, { backgroundColor: theme.colors.primary }]}
+        onPress={handleImportBook}
+      />
     </View>
   );
 }
@@ -262,6 +235,7 @@ export default function LibraryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    position: 'relative',
   },
   searchBar: {
     margin: 16,
