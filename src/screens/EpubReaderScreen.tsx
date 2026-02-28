@@ -1,14 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  View,
-  StyleSheet,
-  Dimensions,
-  TouchableOpacity,
-  Animated,
-  ActivityIndicator,
-} from 'react-native';
+import { View, StyleSheet, Dimensions, Animated } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as FileSystem from 'expo-file-system/legacy';
+import { Asset } from 'expo-asset';
 import {
   Text,
   IconButton,
@@ -49,12 +43,72 @@ export default function EpubReaderScreen() {
   const [webviewError, setWebviewError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadProgress, setLoadProgress] = useState('Initializing...');
+  const [jszipSource, setJszipSource] = useState<string>('');
+  const [epubSource, setEpubSource] = useState<string>('');
+  const [librariesLoaded, setLibrariesLoaded] = useState(false);
+  const [epubData, setEpubData] = useState<string>('');
+  const [epubLoaded, setEpubLoaded] = useState(false);
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
   const currentTheme = Themes[readerSettings.theme];
 
+  // Load library sources
+  useEffect(() => {
+    async function loadLibraries() {
+      try {
+        // Load JSZip
+        const jszipAsset = Asset.fromModule(
+          require('../assets/js/jszip.min.txt'),
+        );
+        await jszipAsset.downloadAsync();
+        console.log('JSZip asset URI:', jszipAsset.localUri || jszipAsset.uri);
+        const jszipContent = await FileSystem.readAsStringAsync(
+          jszipAsset.localUri || jszipAsset.uri,
+        );
+        console.log('JSZip content length:', jszipContent.length);
+        setJszipSource(jszipContent);
+
+        // Load EPub.js
+        const epubAsset = Asset.fromModule(
+          require('../assets/js/epub.min.txt'),
+        );
+        await epubAsset.downloadAsync();
+        console.log('EPUB asset URI:', epubAsset.localUri || epubAsset.uri);
+        const epubContent = await FileSystem.readAsStringAsync(
+          epubAsset.localUri || epubAsset.uri,
+        );
+        console.log('EPUB content length:', epubContent.length);
+        setEpubSource(epubContent);
+
+        setLibrariesLoaded(true);
+        console.log('Libraries loaded successfully');
+      } catch (err) {
+        console.error('Failed to load libraries:', err);
+        setError('Failed to load reader libraries');
+      }
+    }
+    loadLibraries();
+  }, []);
+
   useEffect(() => {
     console.log('EPUB file path:', book.filePath);
+
+    // Read EPUB file as base64
+    async function loadEpubFile() {
+      try {
+        const base64Data = await FileSystem.readAsStringAsync(book.filePath, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        setEpubData(base64Data);
+        setEpubLoaded(true);
+        console.log('EPUB file loaded, size:', base64Data.length);
+      } catch (err) {
+        console.error('Failed to load EPUB file:', err);
+        setError('Failed to load EPUB file');
+      }
+    }
+    loadEpubFile();
+
     setLoading(false);
     console.log('Set loading to false');
 
@@ -91,6 +145,7 @@ export default function EpubReaderScreen() {
   }, [controlsVisible]);
 
   const hideControls = () => {
+    console.log('Hiding controls');
     Animated.timing(fadeAnim, {
       toValue: 0,
       duration: 300,
@@ -99,6 +154,7 @@ export default function EpubReaderScreen() {
   };
 
   const showControls = () => {
+    console.log('Showing controls');
     setControlsVisible(true);
     Animated.timing(fadeAnim, {
       toValue: 1,
@@ -122,6 +178,21 @@ export default function EpubReaderScreen() {
           break;
         case 'toc':
           setToc(data.toc);
+          break;
+        case 'rendered':
+          console.log('WebView rendered section:', data.section);
+          break;
+        case 'click':
+          // Toggle controls when user taps in WebView
+          console.log(
+            'WebView click received, controlsVisible:',
+            controlsVisible,
+          );
+          if (controlsVisible) {
+            hideControls();
+          } else {
+            showControls();
+          }
           break;
         case 'selected':
           // Handle text selection for annotation
@@ -190,13 +261,24 @@ export default function EpubReaderScreen() {
     <html>
     <head>
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-      <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob: file:;">
-      <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-      <script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
+      <script>
+        // EPUB data passed from React Native
+        window.epubBase64Data = '${epubData}';
+        console.log('TEST: Script started, epub data length:', window.epubBase64Data ? window.epubBase64Data.length : 0);
+      </script>
+      <script>${jszipSource}</script>
+      <script>${epubSource}</script>
+      <script>
+        console.log('EPUB Reader: Inline libraries loaded. ePub available:', typeof ePub !== 'undefined', 'JSZip available:', typeof JSZip !== 'undefined');
+        console.log('EPUB Reader: EPUB data available:', !!window.epubBase64Data, 'Length:', window.epubBase64Data ? window.epubBase64Data.length : 0);
+      </script>
       <style>
-        body {
+        html, body {
           margin: 0;
           padding: 0;
+          width: 100%;
+          height: 100%;
+          overflow: hidden;
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
           background-color: ${currentTheme.background};
           color: ${currentTheme.text};
@@ -205,6 +287,12 @@ export default function EpubReaderScreen() {
           width: 100vw;
           height: 100vh;
           overflow: hidden;
+          position: relative;
+          z-index: 1;
+          /* DEBUG: Make viewer visible with border */
+          border: 2px solid red !important;
+          box-sizing: border-box;
+          background-color: ${currentTheme.background};
         }
         #loading-indicator {
           position: fixed;
@@ -283,9 +371,15 @@ export default function EpubReaderScreen() {
         }
 
         function hideLoading() {
+          console.log('EPUB Reader: hideLoading called');
           var loadingIndicator = document.getElementById('loading-indicator');
           if (loadingIndicator) {
             loadingIndicator.style.display = 'none';
+            loadingIndicator.style.visibility = 'hidden';
+            loadingIndicator.style.zIndex = '-1';
+            console.log('EPUB Reader: Loading indicator hidden');
+          } else {
+            console.log('EPUB Reader: Loading indicator not found');
           }
           window.ReactNativeWebView.postMessage(JSON.stringify({
             type: 'loaded'
@@ -314,36 +408,36 @@ export default function EpubReaderScreen() {
           console.log('EPUB Reader: Libraries loaded');
 
           try {
-            // Use the file path directly
-            var filePath = '${book.filePath}';
-            console.log('EPUB Reader: Opening file:', filePath);
+            // Use base64 data passed from React Native
+            console.log('EPUB Reader: Using base64 data, length:', window.epubBase64Data ? window.epubBase64Data.length : 0);
 
-            // Try to fetch the file first to verify access
-            fetch(filePath)
-              .then(function(response) {
-                console.log('EPUB Reader: Fetch response:', response.status, response.statusText);
-                if (!response.ok) {
-                  throw new Error('HTTP ' + response.status);
-                }
-                return response.arrayBuffer();
-              })
-              .then(function(arrayBuffer) {
-                console.log('EPUB Reader: File loaded, size:', arrayBuffer.byteLength);
-                // Use the arrayBuffer with epub.js
-                var book = ePub(arrayBuffer);
-                setupBook(book);
-              })
-              .catch(function(err) {
-                console.error('EPUB Reader: Fetch error:', err.message);
-                // Fallback: try direct file path
-                console.log('EPUB Reader: Trying direct file path...');
-                try {
-                  var book = ePub(filePath);
-                  setupBook(book);
-                } catch(e) {
-                  showError('Failed to open EPUB: ' + e.message);
-                }
-              });
+            if (!window.epubBase64Data || window.epubBase64Data.length === 0) {
+              showError('EPUB data not available');
+              return;
+            }
+
+            // Convert base64 to ArrayBuffer
+            console.log('EPUB Reader: Converting base64 to ArrayBuffer...');
+            var binaryString = atob(window.epubBase64Data);
+            var bytes = new Uint8Array(binaryString.length);
+            for (var i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            var arrayBuffer = bytes.buffer;
+            console.log('EPUB Reader: ArrayBuffer created, size:', arrayBuffer.byteLength);
+
+            // Open EPUB with ArrayBuffer
+            console.log('EPUB Reader: Opening EPUB with ArrayBuffer...');
+            var book = ePub(arrayBuffer);
+            console.log('EPUB Reader: Book object created, waiting for open...');
+
+            // Wait for book to open before setting up
+            book.opened.then(function() {
+              console.log('EPUB Reader: Book opened, now setting up...');
+              setupBook(book);
+            }).catch(function(err) {
+              showError('Failed to open book: ' + err.message);
+            });
           } catch(e) {
             showError('Fatal error: ' + e.message);
           }
@@ -351,22 +445,119 @@ export default function EpubReaderScreen() {
 
         function setupBook(book) {
           try {
-            var rendition = book.renderTo("viewer", {
+            console.log('EPUB Reader: Setting up book...');
+            var viewer = document.getElementById("viewer");
+            console.log('EPUB Reader: Viewer element:', viewer ? 'found' : 'NOT FOUND');
+
+            // Store book and rendition globally so injected JS can access them
+            window.book = book;
+            window.rendition = book.renderTo("viewer", {
               width: "100%",
               height: "100%",
               spread: "none"
             });
             console.log('EPUB Reader: Rendition created');
 
-            rendition.display('${book.currentCfi || ''}');
+            // Check if we have a current location to display
+            var currentCfi = '${book.currentCfi || ''}';
+            console.log('EPUB Reader: Displaying at CFI:', currentCfi || 'start');
+
+            window.rendition.display(currentCfi || undefined).then(function() {
+              console.log('EPUB Reader: Display completed successfully');
+              // DEBUG: Check what's in the viewer
+              var viewer = document.getElementById("viewer");
+              console.log('EPUB Reader: Viewer children count:', viewer.children.length);
+              console.log('EPUB Reader: Viewer innerHTML length:', viewer.innerHTML.length);
+            }).catch(function(err) {
+              console.error('EPUB Reader: Display failed:', err);
+              showError('Failed to display book: ' + (err.message || err));
+            });
             console.log('EPUB Reader: Display called');
 
-            rendition.on("relocated", function(location) {
+            // Add rendered event to confirm content is showing
+            window.rendition.on("rendered", function(section) {
+              console.log('EPUB Reader: Section rendered:', section ? section.idref : 'unknown');
+              window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: 'rendered',
+                section: section ? section.idref : 'unknown'
+              }));
+
+              // DEBUG: Check the iframe that was created
+              var iframes = document.querySelectorAll('iframe');
+              console.log('EPUB Reader: Number of iframes:', iframes.length);
+              if (iframes.length > 0) {
+                var iframe = iframes[0];
+                console.log('EPUB Reader: Iframe src:', iframe.src ? 'has src' : 'no src');
+                console.log('EPUB Reader: Iframe style:', iframe.style.cssText);
+                console.log('EPUB Reader: Iframe dimensions:', iframe.offsetWidth, 'x', iframe.offsetHeight);
+
+                // DEBUG: Add border to iframe to make it visible
+                iframe.style.border = '3px solid blue';
+              }
+            });
+
+            // Add displayError event
+            window.rendition.on("displayError", function(err) {
+              console.error('EPUB Reader: Display error:', err);
+              showError('Display error: ' + (err.message || err));
+            });
+
+            window.rendition.on("relocated", function(location) {
               window.ReactNativeWebView.postMessage(JSON.stringify({
                 type: 'location',
                 cfi: location.start.cfi,
                 progress: location.start.percentage
               }));
+            });
+
+            // Add swipe gesture support for page turning
+            var touchStartX = 0;
+            var touchStartY = 0;
+            var touchEndX = 0;
+            var isSwipe = false;
+            var viewer = document.getElementById("viewer");
+
+            viewer.addEventListener('touchstart', function(e) {
+              touchStartX = e.changedTouches[0].screenX;
+              touchStartY = e.changedTouches[0].screenY;
+              isSwipe = false;
+            }, false);
+
+            viewer.addEventListener('touchmove', function(e) {
+              // Detect if user is swiping horizontally
+              var diffX = Math.abs(e.changedTouches[0].screenX - touchStartX);
+              var diffY = Math.abs(e.changedTouches[0].screenY - touchStartY);
+              if (diffX > 10 && diffX > diffY) {
+                isSwipe = true;
+              }
+            }, false);
+
+            viewer.addEventListener('touchend', function(e) {
+              touchEndX = e.changedTouches[0].screenX;
+              var swipeThreshold = 50;
+              var diff = touchStartX - touchEndX;
+
+              if (Math.abs(diff) > swipeThreshold && isSwipe) {
+                e.preventDefault();
+                if (diff > 0) {
+                  // Swipe left - go to next page
+                  console.log('EPUB Reader: Swipe left detected, going next');
+                  window.rendition.next();
+                } else {
+                  // Swipe right - go to previous page
+                  console.log('EPUB Reader: Swipe right detected, going prev');
+                  window.rendition.prev();
+                }
+              }
+            }, false);
+
+            // Add keyboard navigation support
+            document.addEventListener('keydown', function(e) {
+              if (e.key === 'ArrowLeft') {
+                window.rendition.prev();
+              } else if (e.key === 'ArrowRight') {
+                window.rendition.next();
+              }
             });
 
             book.loaded.navigation.then(function(nav) {
@@ -379,19 +570,22 @@ export default function EpubReaderScreen() {
               console.error('EPUB Reader: Navigation error:', err);
             });
 
-            book.opened.then(function() {
-              console.log('EPUB Reader: Book opened successfully');
-              clearTimeout(initTimeout);
-              hideLoading();
-            }).catch(function(err) {
-              console.error('EPUB Reader: Open error:', err);
-              showError('Failed to open book: ' + err.message);
-            });
+            // Book is already opened when setupBook is called, hide loading
+            console.log('EPUB Reader: Book setup complete, hiding loading');
+            clearTimeout(initTimeout);
+            hideLoading();
 
-            document.addEventListener('click', function() {
-              window.ReactNativeWebView.postMessage(JSON.stringify({
-                type: 'click'
-              }));
+            // Tap to toggle controls - use viewer instead of document
+            viewer.addEventListener('click', function(e) {
+              // Only trigger if not swiping (isSwipe will be true if user swiped)
+              if (!isSwipe) {
+                console.log('EPUB Reader: Tap detected, toggling controls');
+                window.ReactNativeWebView.postMessage(JSON.stringify({
+                  type: 'click'
+                }));
+              }
+              // Reset isSwipe for next interaction
+              isSwipe = false;
             });
           } catch(e) {
             showError('Setup error: ' + e.message);
@@ -399,9 +593,14 @@ export default function EpubReaderScreen() {
         }
 
         // Start initialization when page loads
+        console.log('EPUB Reader: Document readyState:', document.readyState);
         if (document.readyState === 'loading') {
-          document.addEventListener('DOMContentLoaded', initReader);
+          document.addEventListener('DOMContentLoaded', function() {
+            console.log('EPUB Reader: DOMContentLoaded fired');
+            initReader();
+          });
         } else {
+          console.log('EPUB Reader: Calling initReader immediately');
           initReader();
         }
       </script>
@@ -409,38 +608,15 @@ export default function EpubReaderScreen() {
     </html>
   `;
 
-  console.log('Render - loading:', loading, 'webviewLoading:', webviewLoading);
-  if (loading || webviewLoading) {
-    return (
-      <View
-        style={[
-          styles.container,
-          {
-            justifyContent: 'center',
-            alignItems: 'center',
-            backgroundColor: currentTheme.background,
-          },
-        ]}
-      >
-        <ActivityIndicator size="large" color={theme.colors.primary} />
-        <Text style={{ marginTop: 16, color: currentTheme.text }}>
-          {loading ? 'Checking file...' : loadProgress}
-        </Text>
-        {webviewError && (
-          <Text
-            style={{
-              marginTop: 8,
-              color: theme.colors.error,
-              textAlign: 'center',
-              paddingHorizontal: 20,
-            }}
-          >
-            Error: {webviewError}
-          </Text>
-        )}
-      </View>
-    );
-  }
+  console.log(
+    'Render - loading:',
+    loading,
+    'webviewLoading:',
+    webviewLoading,
+    '- SKIPPED',
+  );
+  // DEBUG: Always show WebView
+  // if (loading || webviewLoading) { ... }
 
   if (error) {
     return (
@@ -475,11 +651,16 @@ export default function EpubReaderScreen() {
     <View
       style={[styles.container, { backgroundColor: currentTheme.background }]}
     >
-      <TouchableOpacity
-        style={styles.touchArea}
-        activeOpacity={1}
-        onPress={showControls}
-      >
+      {/* WebView - placed first and outside TouchableOpacity to receive touch events */}
+      {!librariesLoaded || !epubData ? (
+        <View style={styles.loadingContainer}>
+          <Text style={{ color: currentTheme.text }}>
+            {!librariesLoaded
+              ? 'Loading reader libraries...'
+              : 'Loading EPUB file...'}
+          </Text>
+        </View>
+      ) : (
         <WebView
           ref={webviewRef}
           originWhitelist={['*']}
@@ -549,13 +730,18 @@ export default function EpubReaderScreen() {
               <Text style={{ color: 'red' }}>Failed to load: {errorName}</Text>
             </View>
           )}
-          style={{ backgroundColor: currentTheme.background }}
+          style={{ flex: 1, backgroundColor: currentTheme.background }}
+          scrollEnabled={false}
+          scalesPageToFit={false}
+          bounces={false}
+          overScrollMode="never"
+          allowsInlineMediaPlayback
           allowFileAccess
           allowUniversalAccessFromFileURLs
           mixedContentMode="always"
           mediaPlaybackRequiresUserAction={false}
         />
-      </TouchableOpacity>
+      )}
 
       {controlsVisible && (
         <Animated.View style={[styles.controls, { opacity: fadeAnim }]}>
@@ -650,6 +836,11 @@ const styles = StyleSheet.create({
   },
   touchArea: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   controls: {
     ...StyleSheet.absoluteFillObject,

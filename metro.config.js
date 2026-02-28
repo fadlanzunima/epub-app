@@ -10,5 +10,6 @@ const config = getDefaultConfig(__dirname);
 
 // Add WASM file support for expo-sqlite
 config.resolver.assetExts.push('wasm');
+config.resolver.assetExts.push('txt');
 
 module.exports = config;
