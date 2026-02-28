@@ -54,22 +54,22 @@ export default function EpubReaderScreen() {
   const currentTheme = Themes[readerSettings.theme];
 
   useEffect(() => {
-    // Skip file check - we know it exists from the import
     console.log('EPUB file path:', book.filePath);
     setLoading(false);
   }, [book.filePath]);
 
-  // Timeout to force clear loading after 15 seconds
-  useEffect(() => {
-    if (!loading && webviewLoading) {
-      const timer = setTimeout(() => {
-        console.log('Force clearing loading state after timeout');
-        setWebviewLoading(false);
-        setLoadProgress('Loading timeout - check console for errors');
-      }, 15000);
-      return () => clearTimeout(timer);
+  // Consider WebView loaded when progress > 80%
+  const handleLoadProgress = (progress: number) => {
+    const percent = Math.round(progress * 100);
+    console.log('WebView: load progress', percent + '%');
+    setLoadProgress(`Loading: ${percent}%`);
+
+    // Consider loaded when HTML is parsed (progress > 0.8)
+    if (progress > 0.8 && webviewLoading) {
+      console.log('WebView: HTML loaded, allowing display');
+      setWebviewLoading(false);
     }
-  }, [loading, webviewLoading]);
+  };
 
   useEffect(() => {
     // Auto-hide controls after 3 seconds
@@ -527,11 +527,7 @@ export default function EpubReaderScreen() {
             setLoadProgress('WebView loaded, initializing EPUB...');
             setWebviewLoading(false);
           }}
-          onLoadProgress={e => {
-            const progress = Math.round(e.nativeEvent.progress * 100);
-            console.log('WebView: load progress', progress + '%');
-            setLoadProgress(`Loading: ${progress}%`);
-          }}
+          onLoadProgress={e => handleLoadProgress(e.nativeEvent.progress)}
           renderError={errorName => (
             <View
               style={{
