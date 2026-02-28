@@ -18,16 +18,29 @@ This is a **cross-platform E-Book Reader application** built with React Native t
 
 ### Key Features
 
-| Feature | Description |
-|---------|-------------|
-| 📚 Library Management | Import, organize, and manage your e-book collection |
-| 📖 EPUB Reader | Full-featured EPUB rendering using WebView + epub.js |
-| 📄 PDF Reader | Native PDF rendering with zoom and navigation |
-| ⭐ Favorites | Mark books as favorites for quick access |
-| 📑 Bookmarks | Save and manage bookmarks within books |
-| ✏️ Annotations | Highlight text and add personal notes |
-| 📊 Statistics | Track reading progress and reading habits |
-| 🎨 Customization | Multiple themes, font sizes, and reading preferences |
+| Feature | Description | Status |
+|---------|-------------|--------|
+| 📚 Library Management | Import, organize, and manage your e-book collection | ✅ Implemented |
+| 📖 EPUB Reader | Full-featured EPUB rendering using WebView + epub.js | ✅ Implemented |
+| 📄 PDF Reader | Native PDF rendering with zoom and navigation | ✅ Implemented |
+| ⭐ Favorites | Mark books as favorites for quick access | ✅ Implemented |
+| 📑 Bookmarks | Save and manage bookmarks within books | ✅ Implemented |
+| ✏️ Annotations | Highlight text and add personal notes | ✅ Implemented |
+| 📊 Statistics | Track reading progress and reading habits | ✅ Implemented |
+| 🎨 Customization | Multiple themes, font sizes, and reading preferences | ✅ Implemented |
+
+### Recent Fixes (Latest Update)
+
+| Fix | Description |
+|-----|-------------|
+| EPUB Import | Fixed to use `BookService.importBook()` instead of `StorageService.importBook()` |
+| Navigation | Auto-navigate to reader screen after successful import |
+| Crypto Polyfill | Added `react-native-get-random-values` for UUID generation |
+| File Loading | Changed from base64 data URL to `fetch()` API with ArrayBuffer fallback |
+| WebView Debugging | Added comprehensive console logging and error handling |
+| EPUB Rendering | Uses CDN-loaded epub.js with retry logic |
+
+**Note:** EPUB reader uses `fetch()` to load files as ArrayBuffer, with fallback to direct file path. Both phone and laptop must be on same WiFi for Expo Go testing.
 
 ---
 
