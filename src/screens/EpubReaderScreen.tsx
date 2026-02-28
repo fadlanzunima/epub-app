@@ -135,13 +135,14 @@ export default function EpubReaderScreen() {
   };
 
   useEffect(() => {
-    // Auto-hide controls after 3 seconds
+    // Auto-hide controls after 5 seconds (increased from 3)
     const timer = setTimeout(() => {
       if (controlsVisible) {
         hideControls();
       }
-    }, 3000);
+    }, 5000);
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [controlsVisible]);
 
   const hideControls = () => {
@@ -289,9 +290,6 @@ export default function EpubReaderScreen() {
           overflow: hidden;
           position: relative;
           z-index: 1;
-          /* DEBUG: Make viewer visible with border */
-          border: 2px solid red !important;
-          box-sizing: border-box;
           background-color: ${currentTheme.background};
         }
         #loading-indicator {
@@ -482,17 +480,30 @@ export default function EpubReaderScreen() {
                 section: section ? section.idref : 'unknown'
               }));
 
-              // DEBUG: Check the iframe that was created
+              // Make sure iframe is visible and has proper styling
               var iframes = document.querySelectorAll('iframe');
-              console.log('EPUB Reader: Number of iframes:', iframes.length);
               if (iframes.length > 0) {
                 var iframe = iframes[0];
-                console.log('EPUB Reader: Iframe src:', iframe.src ? 'has src' : 'no src');
-                console.log('EPUB Reader: Iframe style:', iframe.style.cssText);
-                console.log('EPUB Reader: Iframe dimensions:', iframe.offsetWidth, 'x', iframe.offsetHeight);
+                // Force iframe visibility
+                iframe.style.visibility = 'visible';
+                iframe.style.display = 'block';
+                iframe.style.opacity = '1';
+                iframe.style.border = 'none';
+                iframe.style.backgroundColor = '${currentTheme.background}';
 
-                // DEBUG: Add border to iframe to make it visible
-                iframe.style.border = '3px solid blue';
+                // Try to access iframe content to ensure it's loaded
+                try {
+                  var iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                  console.log('EPUB Reader: Iframe content accessible, body exists:', !!iframeDoc.body);
+                  if (iframeDoc.body) {
+                    iframeDoc.body.style.backgroundColor = '${
+                      currentTheme.background
+                    }';
+                    iframeDoc.body.style.color = '${currentTheme.text}';
+                  }
+                } catch(e) {
+                  console.log('EPUB Reader: Cannot access iframe content (cross-origin)');
+                }
               }
             });
 
@@ -510,32 +521,34 @@ export default function EpubReaderScreen() {
               }));
             });
 
-            // Add swipe gesture support for page turning
+            // Add swipe gesture support for page turning (on document for full coverage)
             var touchStartX = 0;
             var touchStartY = 0;
             var touchEndX = 0;
             var isSwipe = false;
-            var viewer = document.getElementById("viewer");
 
-            viewer.addEventListener('touchstart', function(e) {
+            document.addEventListener('touchstart', function(e) {
               touchStartX = e.changedTouches[0].screenX;
               touchStartY = e.changedTouches[0].screenY;
               isSwipe = false;
-            }, false);
+              console.log('EPUB Reader: touchstart at', touchStartX, touchStartY);
+            }, {passive: true});
 
-            viewer.addEventListener('touchmove', function(e) {
+            document.addEventListener('touchmove', function(e) {
               // Detect if user is swiping horizontally
               var diffX = Math.abs(e.changedTouches[0].screenX - touchStartX);
               var diffY = Math.abs(e.changedTouches[0].screenY - touchStartY);
               if (diffX > 10 && diffX > diffY) {
                 isSwipe = true;
               }
-            }, false);
+            }, {passive: true});
 
-            viewer.addEventListener('touchend', function(e) {
+            document.addEventListener('touchend', function(e) {
               touchEndX = e.changedTouches[0].screenX;
               var swipeThreshold = 50;
               var diff = touchStartX - touchEndX;
+
+              console.log('EPUB Reader: touchend, diff:', diff, 'isSwipe:', isSwipe);
 
               if (Math.abs(diff) > swipeThreshold && isSwipe) {
                 e.preventDefault();
@@ -549,7 +562,7 @@ export default function EpubReaderScreen() {
                   window.rendition.prev();
                 }
               }
-            }, false);
+            }, {passive: false});
 
             // Add keyboard navigation support
             document.addEventListener('keydown', function(e) {
@@ -575,8 +588,8 @@ export default function EpubReaderScreen() {
             clearTimeout(initTimeout);
             hideLoading();
 
-            // Tap to toggle controls - use viewer instead of document
-            viewer.addEventListener('click', function(e) {
+            // Tap to toggle controls - use document for full coverage
+            document.addEventListener('click', function(e) {
               // Only trigger if not swiping (isSwipe will be true if user swiped)
               if (!isSwipe) {
                 console.log('EPUB Reader: Tap detected, toggling controls');
