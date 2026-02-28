@@ -48,6 +48,7 @@ export default function EpubReaderScreen() {
   const [webviewLoading, setWebviewLoading] = useState(true);
   const [webviewError, setWebviewError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadProgress, setLoadProgress] = useState('Initializing...');
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
   const currentTheme = Themes[readerSettings.theme];
@@ -73,6 +74,18 @@ export default function EpubReaderScreen() {
     };
     checkFile();
   }, [book.filePath]);
+
+  // Timeout to force clear loading after 15 seconds
+  useEffect(() => {
+    if (!loading && webviewLoading) {
+      const timer = setTimeout(() => {
+        console.log('Force clearing loading state after timeout');
+        setWebviewLoading(false);
+        setLoadProgress('Loading timeout - check console for errors');
+      }, 15000);
+      return () => clearTimeout(timer);
+    }
+  }, [loading, webviewLoading]);
 
   useEffect(() => {
     // Auto-hide controls after 3 seconds
@@ -417,7 +430,7 @@ export default function EpubReaderScreen() {
       >
         <ActivityIndicator size="large" color={theme.colors.primary} />
         <Text style={{ marginTop: 16, color: currentTheme.text }}>
-          {loading ? 'Checking file...' : 'Loading book content...'}
+          {loading ? 'Checking file...' : loadProgress}
         </Text>
         {webviewError && (
           <Text
@@ -511,20 +524,30 @@ export default function EpubReaderScreen() {
           onError={e => {
             console.error('WebView error:', e.nativeEvent);
             setWebviewError(e.nativeEvent.description || 'WebView error');
+            setLoadProgress(
+              'Error: ' + (e.nativeEvent.description || 'WebView error'),
+            );
             setWebviewLoading(false);
           }}
-          onHttpError={e => console.error('WebView HTTP error:', e.nativeEvent)}
+          onHttpError={e => {
+            console.error('WebView HTTP error:', e.nativeEvent);
+            setLoadProgress('HTTP Error: ' + e.nativeEvent.statusCode);
+          }}
           onLoadStart={() => {
             console.log('WebView: load start');
+            setLoadProgress('Loading WebView...');
             setWebviewLoading(true);
           }}
           onLoadEnd={() => {
             console.log('WebView: load end');
+            setLoadProgress('WebView loaded, initializing EPUB...');
             setWebviewLoading(false);
           }}
-          onLoadProgress={e =>
-            console.log('WebView: load progress', e.nativeEvent.progress)
-          }
+          onLoadProgress={e => {
+            const progress = Math.round(e.nativeEvent.progress * 100);
+            console.log('WebView: load progress', progress + '%');
+            setLoadProgress(`Loading: ${progress}%`);
+          }}
           renderError={errorName => (
             <View
               style={{
