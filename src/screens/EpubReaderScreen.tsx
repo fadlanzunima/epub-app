@@ -56,16 +56,23 @@ export default function EpubReaderScreen() {
   useEffect(() => {
     console.log('EPUB file path:', book.filePath);
     setLoading(false);
+
+    // Force clear webview loading after 5 seconds
+    const timer = setTimeout(() => {
+      console.log('Force clearing webview loading after 5s');
+      setWebviewLoading(false);
+    }, 5000);
+    return () => clearTimeout(timer);
   }, [book.filePath]);
 
-  // Consider WebView loaded when progress > 80%
+  // Consider WebView loaded when progress > 50%
   const handleLoadProgress = (progress: number) => {
     const percent = Math.round(progress * 100);
     console.log('WebView: load progress', percent + '%');
     setLoadProgress(`Loading: ${percent}%`);
 
-    // Consider loaded when HTML is parsed (progress > 0.8)
-    if (progress > 0.8 && webviewLoading) {
+    // Consider loaded earlier (progress > 0.5)
+    if (progress > 0.5 && webviewLoading) {
       console.log('WebView: HTML loaded, allowing display');
       setWebviewLoading(false);
     }
