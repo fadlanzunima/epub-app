@@ -56,12 +56,14 @@ export default function EpubReaderScreen() {
   useEffect(() => {
     console.log('EPUB file path:', book.filePath);
     setLoading(false);
+    console.log('Set loading to false');
 
-    // Force clear webview loading after 5 seconds
+    // Force clear webview loading after 3 seconds
     const timer = setTimeout(() => {
-      console.log('Force clearing webview loading after 5s');
+      console.log('Force clearing webview loading after 3s');
       setWebviewLoading(false);
-    }, 5000);
+      console.log('Set webviewLoading to false');
+    }, 3000);
     return () => clearTimeout(timer);
   }, [book.filePath]);
 
@@ -407,6 +409,7 @@ export default function EpubReaderScreen() {
     </html>
   `;
 
+  console.log('Render - loading:', loading, 'webviewLoading:', webviewLoading);
   if (loading || webviewLoading) {
     return (
       <View
