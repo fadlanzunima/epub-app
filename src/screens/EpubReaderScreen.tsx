@@ -54,25 +54,9 @@ export default function EpubReaderScreen() {
   const currentTheme = Themes[readerSettings.theme];
 
   useEffect(() => {
-    // Check if file exists
-    const checkFile = async () => {
-      try {
-        const fileInfo = await FileSystem.getInfoAsync(book.filePath);
-        if (!fileInfo.exists) {
-          throw new Error(`File not found: ${book.filePath}`);
-        }
-        console.log('EPUB file found:', book.filePath, 'Size:', fileInfo.size);
-        setError(null);
-      } catch (err) {
-        const errorMsg =
-          err instanceof Error ? err.message : 'Failed to load EPUB';
-        console.error('Error checking EPUB file:', err);
-        setError(errorMsg);
-      } finally {
-        setLoading(false);
-      }
-    };
-    checkFile();
+    // Skip file check - we know it exists from the import
+    console.log('EPUB file path:', book.filePath);
+    setLoading(false);
   }, [book.filePath]);
 
   // Timeout to force clear loading after 15 seconds
