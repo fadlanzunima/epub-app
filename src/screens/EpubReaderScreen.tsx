@@ -28,11 +28,7 @@ import { TocItem, Themes, ThemeType } from '../types';
 
 type RoutePropType = RouteProp<RootStackParamList, 'EpubReader'>;
 
-const { width, height } = Dimensions.get('window');
-
-const EPUB_JS = `
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/epub.js/0.3.93/epub.min.js"></script>
-`;
+const { height } = Dimensions.get('window');
 
 export default function EpubReaderScreen() {
   const route = useRoute<RoutePropType>();
@@ -49,6 +45,8 @@ export default function EpubReaderScreen() {
   const [currentLocation, setCurrentLocation] = useState(book.currentCfi || '');
   const [progress, setProgress] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [webviewLoading, setWebviewLoading] = useState(true);
+  const [webviewError, setWebviewError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
@@ -122,6 +120,10 @@ export default function EpubReaderScreen() {
         case 'selected':
           // Handle text selection for annotation
           break;
+        case 'loaded':
+          setWebviewLoading(false);
+          setWebviewError(null);
+          break;
         case 'console':
           // Log WebView console messages
           if (data.level === 'error') {
@@ -132,6 +134,8 @@ export default function EpubReaderScreen() {
           break;
         case 'error':
           console.error('[WebView Error]', data.message);
+          setWebviewError(data.message);
+          setWebviewLoading(false);
           break;
       }
     } catch (e) {
@@ -162,7 +166,7 @@ export default function EpubReaderScreen() {
   };
 
   const addBookmark = () => {
-    BookService.addBookmark(book.id, currentLocation, undefined, 'Bookmark');
+    BookService.addBookmark(book.id, currentLocation, 'Bookmark');
     setMenuVisible(false);
   };
 
@@ -196,11 +200,97 @@ export default function EpubReaderScreen() {
           height: 100vh;
           overflow: hidden;
         }
+        #loading-indicator {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          background-color: ${currentTheme.background};
+          z-index: 9999;
+        }
+        .spinner {
+          width: 40px;
+          height: 40px;
+          border: 4px solid ${currentTheme.text}33;
+          border-top-color: ${currentTheme.text};
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+        #error-display {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          display: none;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          background-color: ${currentTheme.background};
+          color: #ff4444;
+          padding: 20px;
+          text-align: center;
+          z-index: 9998;
+        }
+        #error-display.visible {
+          display: flex;
+        }
       </style>
     </head>
     <body>
+      <div id="loading-indicator">
+        <div class="spinner"></div>
+        <p style="margin-top: 16px; color: ${
+          currentTheme.text
+        };">Loading book...</p>
+      </div>
+      <div id="error-display">
+        <h3>Failed to load book</h3>
+        <p id="error-message"></p>
+      </div>
       <div id="viewer"></div>
       <script>
+        function showError(message) {
+          console.error('EPUB Reader Error:', message);
+          var errorDisplay = document.getElementById('error-display');
+          var errorMessage = document.getElementById('error-message');
+          var loadingIndicator = document.getElementById('loading-indicator');
+          if (errorDisplay && errorMessage) {
+            errorMessage.textContent = message;
+            errorDisplay.classList.add('visible');
+          }
+          if (loadingIndicator) {
+            loadingIndicator.style.display = 'none';
+          }
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'error',
+            message: message
+          }));
+        }
+
+        function hideLoading() {
+          var loadingIndicator = document.getElementById('loading-indicator');
+          if (loadingIndicator) {
+            loadingIndicator.style.display = 'none';
+          }
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'loaded'
+          }));
+        }
+
+        // Timeout detection - fail if not loaded within 30 seconds
+        var initTimeout = setTimeout(function() {
+          showError('Timeout: Failed to load book within 30 seconds. Please check your connection and try again.');
+        }, 30000);
+
         function initReader() {
           console.log('EPUB Reader: Starting initialization');
 
@@ -224,32 +314,32 @@ export default function EpubReaderScreen() {
 
             // Try to fetch the file first to verify access
             fetch(filePath)
-              .then(response => {
+              .then(function(response) {
                 console.log('EPUB Reader: Fetch response:', response.status, response.statusText);
                 if (!response.ok) {
                   throw new Error('HTTP ' + response.status);
                 }
                 return response.arrayBuffer();
               })
-              .then(arrayBuffer => {
+              .then(function(arrayBuffer) {
                 console.log('EPUB Reader: File loaded, size:', arrayBuffer.byteLength);
                 // Use the arrayBuffer with epub.js
                 var book = ePub(arrayBuffer);
                 setupBook(book);
               })
-              .catch(err => {
+              .catch(function(err) {
                 console.error('EPUB Reader: Fetch error:', err.message);
                 // Fallback: try direct file path
                 console.log('EPUB Reader: Trying direct file path...');
-                var book = ePub(filePath);
-                setupBook(book);
+                try {
+                  var book = ePub(filePath);
+                  setupBook(book);
+                } catch(e) {
+                  showError('Failed to open EPUB: ' + e.message);
+                }
               });
           } catch(e) {
-            console.error('EPUB Reader: Fatal error:', e.message);
-            window.ReactNativeWebView.postMessage(JSON.stringify({
-              type: 'error',
-              message: e.message
-            }));
+            showError('Fatal error: ' + e.message);
           }
         }
 
@@ -285,8 +375,11 @@ export default function EpubReaderScreen() {
 
             book.opened.then(function() {
               console.log('EPUB Reader: Book opened successfully');
+              clearTimeout(initTimeout);
+              hideLoading();
             }).catch(function(err) {
               console.error('EPUB Reader: Open error:', err);
+              showError('Failed to open book: ' + err.message);
             });
 
             document.addEventListener('click', function() {
@@ -295,11 +388,7 @@ export default function EpubReaderScreen() {
               }));
             });
           } catch(e) {
-            console.error('EPUB Reader: Fatal error:', e.message);
-            window.ReactNativeWebView.postMessage(JSON.stringify({
-              type: 'error',
-              message: e.message
-            }));
+            showError('Setup error: ' + e.message);
           }
         }
 
@@ -314,7 +403,7 @@ export default function EpubReaderScreen() {
     </html>
   `;
 
-  if (loading) {
+  if (loading || webviewLoading) {
     return (
       <View
         style={[
@@ -327,6 +416,21 @@ export default function EpubReaderScreen() {
         ]}
       >
         <ActivityIndicator size="large" color={theme.colors.primary} />
+        <Text style={{ marginTop: 16, color: currentTheme.text }}>
+          {loading ? 'Checking file...' : 'Loading book content...'}
+        </Text>
+        {webviewError && (
+          <Text
+            style={{
+              marginTop: 8,
+              color: theme.colors.error,
+              textAlign: 'center',
+              paddingHorizontal: 20,
+            }}
+          >
+            Error: {webviewError}
+          </Text>
+        )}
       </View>
     );
   }
@@ -404,10 +508,20 @@ export default function EpubReaderScreen() {
           `}
           javaScriptEnabled={true}
           domStorageEnabled={true}
-          onError={e => console.error('WebView error:', e.nativeEvent)}
+          onError={e => {
+            console.error('WebView error:', e.nativeEvent);
+            setWebviewError(e.nativeEvent.description || 'WebView error');
+            setWebviewLoading(false);
+          }}
           onHttpError={e => console.error('WebView HTTP error:', e.nativeEvent)}
-          onLoadStart={() => console.log('WebView: load start')}
-          onLoadEnd={() => console.log('WebView: load end')}
+          onLoadStart={() => {
+            console.log('WebView: load start');
+            setWebviewLoading(true);
+          }}
+          onLoadEnd={() => {
+            console.log('WebView: load end');
+            setWebviewLoading(false);
+          }}
           onLoadProgress={e =>
             console.log('WebView: load progress', e.nativeEvent.progress)
           }
