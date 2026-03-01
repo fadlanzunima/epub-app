@@ -5,12 +5,10 @@ import { List, Switch, Divider, useTheme, Button } from 'react-native-paper';
 import SettingsService from '../services/SettingsService';
 import { useStore } from '../hooks/useStore';
 import { ReaderSettings } from '../types';
-import { useThemeContext } from '../context/ThemeContext';
 
 export default function SettingsScreen() {
   const theme = useTheme();
-  const { readerSettings, setReaderSettings } = useStore();
-  const { setTheme: setAppTheme } = useThemeContext();
+  const { readerSettings, setReaderSettings, setTheme } = useStore();
   const [settings, setLocalSettings] = useState<ReaderSettings>(readerSettings);
 
   useEffect(() => {
@@ -34,7 +32,7 @@ export default function SettingsScreen() {
       const appTheme =
         newSettings.theme === 'sepia' ? 'light' : newSettings.theme;
       console.log('🎨 Updating app theme to:', appTheme);
-      await setAppTheme(appTheme as 'light' | 'dark' | 'system');
+      setTheme(appTheme as 'light' | 'dark');
     }
   };
 
