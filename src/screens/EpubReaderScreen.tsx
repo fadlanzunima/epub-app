@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -101,6 +101,86 @@ export default function EpubReaderScreen() {
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
   const currentTheme = Themes[readerSettings.theme];
+
+  // Apply reader settings to WebView in real-time
+  const applyReaderSettingsToWebView = useCallback(() => {
+    const settings = readerSettings;
+    console.log('⚙️ Applying reader settings to WebView:', settings);
+
+    const theme = Themes[settings.theme];
+
+    webviewRef.current?.injectJavaScript(`
+      (function() {
+        console.log('⚙️ [WebView] Applying reader settings');
+
+        // Update theme colors
+        document.body.style.backgroundColor = '${theme.background}';
+        document.body.style.color = '${theme.text}';
+
+        // Update viewer background
+        var viewer = document.getElementById('viewer');
+        if (viewer) {
+          viewer.style.backgroundColor = '${theme.background}';
+        }
+
+        // Apply settings to iframe content
+        var iframes = document.querySelectorAll('iframe');
+        iframes.forEach(function(iframe) {
+          try {
+            var doc = iframe.contentDocument || iframe.contentWindow.document;
+            if (doc && doc.body) {
+              // Apply font size
+              doc.body.style.fontSize = '${settings.fontSize}px';
+
+              // Apply line height
+              doc.body.style.lineHeight = '${settings.lineHeight}';
+
+              // Apply margins (padding on body)
+              doc.body.style.paddingLeft = '${settings.marginHorizontal}px';
+              doc.body.style.paddingRight = '${settings.marginHorizontal}px';
+              doc.body.style.paddingTop = '${settings.marginVertical}px';
+              doc.body.style.paddingBottom = '${settings.marginVertical}px';
+
+              // Apply theme colors
+              doc.body.style.backgroundColor = '${theme.background}';
+              doc.body.style.color = '${theme.text}';
+
+              // Apply to all text elements for consistency
+              var allText = doc.querySelectorAll('p, span, div, h1, h2, h3, h4, h5, h6, li, td, th');
+              allText.forEach(function(el) {
+                el.style.color = '${theme.text}';
+              });
+
+              console.log('⚙️ [WebView] Settings applied to iframe:', {
+                fontSize: '${settings.fontSize}px',
+                lineHeight: '${settings.lineHeight}',
+                margins: '${settings.marginHorizontal}px/${settings.marginVertical}px'
+              });
+            }
+          } catch(e) {
+            console.error('⚙️ [WebView] Error applying settings to iframe:', e);
+          }
+        });
+
+        // Store settings globally for new sections
+        window.readerSettings = {
+          fontSize: ${settings.fontSize},
+          lineHeight: ${settings.lineHeight},
+          marginHorizontal: ${settings.marginHorizontal},
+          marginVertical: ${settings.marginVertical},
+          theme: '${settings.theme}'
+        };
+      })();
+      true;
+    `);
+  }, [readerSettings]);
+
+  // Listen for reader settings changes and apply them immediately
+  useEffect(() => {
+    if (librariesLoaded && epubData) {
+      applyReaderSettingsToWebView();
+    }
+  }, [readerSettings, librariesLoaded, epubData, applyReaderSettingsToWebView]);
 
   // Load library sources
   useEffect(() => {
@@ -893,6 +973,26 @@ export default function EpubReaderScreen() {
                       }
                     \`;
                     iframeDoc.head.appendChild(style);
+
+                    // Apply stored reader settings if available
+                    if (window.readerSettings) {
+                      console.log('EPUB Reader: Applying stored reader settings to new section');
+                      var rs = window.readerSettings;
+
+                      // Apply font size
+                      iframeDoc.body.style.fontSize = rs.fontSize + 'px';
+
+                      // Apply line height
+                      iframeDoc.body.style.lineHeight = rs.lineHeight;
+
+                      // Apply margins
+                      iframeDoc.body.style.paddingLeft = rs.marginHorizontal + 'px';
+                      iframeDoc.body.style.paddingRight = rs.marginHorizontal + 'px';
+                      iframeDoc.body.style.paddingTop = rs.marginVertical + 'px';
+                      iframeDoc.body.style.paddingBottom = rs.marginVertical + 'px';
+
+                      console.log('EPUB Reader: Settings applied - fontSize:', rs.fontSize, 'lineHeight:', rs.lineHeight);
+                    }
 
                     // Add click handler to iframe body for toggling controls
                     var clickHandler = function(e) {
