@@ -1,4 +1,4 @@
-import * as SQLite from 'expo-sqlite';
+import { openDatabaseSync, type SQLiteDatabase } from 'expo-sqlite';
 import {
   Book,
   Category,
@@ -10,17 +10,48 @@ import {
 const DATABASE_NAME = 'EReader.db';
 
 class DatabaseService {
-  private db: SQLite.SQLiteDatabase | null = null;
+  private db: SQLiteDatabase | null = null;
+  private isInitializing = false;
+  private initPromise: Promise<void> | null = null;
 
   async init(): Promise<void> {
-    this.db = await SQLite.openDatabaseAsync(DATABASE_NAME);
-    await this.createTables();
+    // Prevent multiple simultaneous initializations
+    if (this.isInitializing && this.initPromise) {
+      console.log('DatabaseService: Waiting for existing initialization...');
+      return this.initPromise;
+    }
+
+    this.isInitializing = true;
+    this.initPromise = this.doInit();
+    return this.initPromise;
+  }
+
+  private async doInit(): Promise<void> {
+    try {
+      console.log('DatabaseService: Opening database...', DATABASE_NAME);
+      // Use synchronous API for better compatibility with expo-sqlite 16.x
+      this.db = openDatabaseSync(DATABASE_NAME);
+      console.log('DatabaseService: Database opened successfully');
+      await this.createTables();
+      console.log('DatabaseService: Tables created successfully');
+    } catch (error) {
+      console.error('DatabaseService: Failed to initialize database:', error);
+      this.db = null;
+      throw error;
+    } finally {
+      this.isInitializing = false;
+    }
   }
 
   private async createTables(): Promise<void> {
-    if (!this.db) return;
+    if (!this.db) {
+      console.error('DatabaseService: Cannot create tables - database is null');
+      throw new Error('Database not initialized');
+    }
 
-    await this.db.execAsync(`
+    console.log('DatabaseService: Creating tables...');
+    try {
+      await this.db.execAsync(`
       CREATE TABLE IF NOT EXISTS books (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
@@ -83,11 +114,23 @@ class DatabaseService {
         FOREIGN KEY (bookId) REFERENCES books(id) ON DELETE CASCADE
       );
     `);
+      console.log('DatabaseService: Tables created successfully');
+    } catch (error) {
+      console.error('DatabaseService: Failed to create tables:', error);
+      throw error;
+    }
   }
 
   // Books
   async addBook(book: Book): Promise<void> {
-    if (!this.db) return;
+    console.log('DatabaseService: addBook called', {
+      id: book.id,
+      title: book.title,
+    });
+    if (!this.db) {
+      console.error('DatabaseService: Database not initialized!');
+      return;
+    }
     await this.db.runAsync(
       `INSERT INTO books (id, title, author, description, filePath, fileType, coverImage,
         addedAt, lastReadAt, totalPages, currentPage, currentCfi, readingTime, isFavorite)
@@ -143,10 +186,30 @@ class DatabaseService {
   }
 
   async getBooks(): Promise<Book[]> {
-    if (!this.db) return [];
+    // Auto-initialize if not already done
+    if (!this.db) {
+      console.log(
+        'DatabaseService: Database not initialized, attempting auto-init...',
+      );
+      try {
+        await this.init();
+      } catch (error) {
+        console.error('DatabaseService: Auto-init failed:', error);
+        return [];
+      }
+    }
+
+    if (!this.db) {
+      console.error(
+        'DatabaseService: Database still not initialized after auto-init attempt',
+      );
+      return [];
+    }
+
     const rows = await this.db.getAllAsync<any>(
       'SELECT * FROM books ORDER BY addedAt DESC',
     );
+    console.log('DatabaseService: getBooks returned', rows.length, 'books');
     return rows.map(this.rowToBook);
   }
 

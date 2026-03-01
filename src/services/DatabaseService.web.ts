@@ -29,6 +29,11 @@ class DatabaseService {
 
   // Books
   async getBooks(): Promise<Book[]> {
+    console.log(
+      'DatabaseService.web: getBooks called, returning',
+      storage.books.length,
+      'books',
+    );
     return [...storage.books];
   }
 
@@ -37,7 +42,15 @@ class DatabaseService {
   }
 
   async addBook(book: Book): Promise<void> {
+    console.log('DatabaseService.web: addBook called', {
+      id: book.id,
+      title: book.title,
+    });
     storage.books.push(book);
+    console.log(
+      'DatabaseService.web: Book added, total books:',
+      storage.books.length,
+    );
   }
 
   async updateBook(book: Book): Promise<void> {

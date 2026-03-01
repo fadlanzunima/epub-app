@@ -1,5 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, Dimensions, Animated } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  Dimensions,
+  Animated,
+  ScrollView,
+  Pressable,
+  ActivityIndicator,
+} from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Asset } from 'expo-asset';
@@ -10,31 +18,73 @@ import {
   Menu,
   Portal,
   Modal,
-  List,
   Divider,
+  Snackbar,
+  TextInput,
+  Button,
+  Surface,
 } from 'react-native-paper';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { useStore } from '../hooks/useStore';
 import BookService from '../services/BookService';
-import { TocItem, Themes, ThemeType } from '../types';
+import SettingsService from '../services/SettingsService';
+import { TocItem, Themes, ThemeType, Bookmark } from '../types';
 
 type RoutePropType = RouteProp<RootStackParamList, 'EpubReader'>;
 
 const { height } = Dimensions.get('window');
+
+// Helper function to highlight search term in text
+function highlightSearchTerm(text: string, query: string): React.ReactNode {
+  if (!query.trim()) return text;
+
+  const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`(${escapedQuery})`, 'gi');
+  const parts = text.split(regex);
+
+  return parts.map((part, index) => {
+    if (part.toLowerCase() === query.toLowerCase()) {
+      return (
+        <Text
+          key={index}
+          style={{
+            fontWeight: 'bold',
+            backgroundColor: '#FFD700',
+            color: '#000',
+          }}
+        >
+          {part}
+        </Text>
+      );
+    }
+    return part;
+  });
+}
 
 export default function EpubReaderScreen() {
   const route = useRoute<RoutePropType>();
   const navigation = useNavigation();
   const theme = useTheme();
   const { book } = route.params;
-  const { readerSettings } = useStore();
+  const { readerSettings, updateReaderSetting } = useStore();
   const webviewRef = useRef<WebView>(null);
 
   const [controlsVisible, setControlsVisible] = useState(true);
   const [menuVisible, setMenuVisible] = useState(false);
   const [tocVisible, setTocVisible] = useState(false);
+  const [bookmarksVisible, setBookmarksVisible] = useState(false);
+  const [bookmarkDialogVisible, setBookmarkDialogVisible] = useState(false);
+  const [bookmarkTitle, setBookmarkTitle] = useState('');
+  const [bookmarkDescription, setBookmarkDescription] = useState('');
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [toc, setToc] = useState<TocItem[]>([]);
   const [currentLocation, setCurrentLocation] = useState(book.currentCfi || '');
   const [progress, setProgress] = useState(0);
@@ -186,17 +236,53 @@ export default function EpubReaderScreen() {
         case 'click':
           // Toggle controls when user taps in WebView
           console.log(
-            'WebView click received, controlsVisible:',
+            'WebView CLICK received, controlsVisible:',
             controlsVisible,
           );
           if (controlsVisible) {
+            console.log('Hiding controls from click');
             hideControls();
           } else {
+            console.log('Showing controls from click');
             showControls();
           }
           break;
+        case 'cycleTheme':
+          console.log('WebView: Cycle theme request received');
+          // Cycle through themes: light -> dark -> sepia -> light
+          const themeOrder: ThemeType[] = ['light', 'dark', 'sepia'];
+          const currentThemeName = readerSettings.theme;
+          const currentIndex = themeOrder.indexOf(currentThemeName);
+          const nextIndex = (currentIndex + 1) % themeOrder.length;
+          const nextTheme = themeOrder[nextIndex];
+          console.log(
+            'WebView: Cycling theme from',
+            currentThemeName,
+            'to',
+            nextTheme,
+          );
+          changeTheme(nextTheme);
+          break;
         case 'selected':
           // Handle text selection for annotation
+          break;
+        case 'searchResults':
+          console.log(
+            '🔍 [React Native] Search results received:',
+            data.results?.length,
+          );
+          console.log(
+            '🔍 [React Native] Results data:',
+            JSON.stringify(data.results?.slice(0, 3), null, 2),
+          );
+          if (data.error) {
+            console.error(
+              '🔍 [React Native] Search error from WebView:',
+              data.error,
+            );
+          }
+          setIsSearching(false);
+          setSearchResults(data.results || []);
           break;
         case 'loaded':
           setWebviewLoading(false);
@@ -222,8 +308,64 @@ export default function EpubReaderScreen() {
   };
 
   const goToLocation = (href: string) => {
+    console.log('Navigating to TOC item:', href);
+    // Escape single quotes and backslashes in href to prevent breaking the JavaScript string
+    const escapedHref = href.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     webviewRef.current?.injectJavaScript(`
-      rendition.display('${href}');
+      (function() {
+        try {
+          if (window.rendition && window.book) {
+            console.log('EPUB Reader: Attempting to navigate to: ${escapedHref}');
+            // Try direct href first (more reliable for TOC items)
+            window.rendition.display('${escapedHref}').then(function() {
+              console.log('EPUB Reader: Successfully navigated to: ${escapedHref}');
+              // Force iframe visibility after navigation
+              setTimeout(function() {
+                var iframes = document.querySelectorAll('iframe');
+                if (iframes.length > 0) {
+                  var iframe = iframes[0];
+                  iframe.style.visibility = 'visible';
+                  iframe.style.opacity = '1';
+                  iframe.style.display = 'block';
+                  iframe.style.width = '100%';
+                  iframe.style.height = '100%';
+                  console.log('EPUB Reader: Forced iframe visibility after nav');
+                  // Check content and force text color
+                  try {
+                    var doc = iframe.contentDocument || iframe.contentWindow.document;
+                    console.log('EPUB Reader: Post-nav body content length:', doc.body.innerHTML.length);
+                    // Force text color on body
+                    doc.body.style.color = '${currentTheme.text}';
+                    doc.body.style.backgroundColor = '${currentTheme.background}';
+                    // Force all text elements to have visible color
+                    var allElements = doc.querySelectorAll('*');
+                    for (var i = 0; i < allElements.length; i++) {
+                      allElements[i].style.color = '${currentTheme.text}';
+                    }
+                    console.log('EPUB Reader: Applied text colors to', allElements.length, 'elements');
+                  } catch(e) {
+                    console.log('EPUB Reader: Error applying post-nav styles:', e.message);
+                  }
+                }
+              }, 100);
+            }).catch(function(err) {
+              console.error('EPUB Reader: Failed with direct href:', err);
+              // Fallback: try resolved href
+              try {
+                var resolved = window.book.resolve('${escapedHref}');
+                console.log('EPUB Reader: Trying resolved href:', resolved);
+                window.rendition.display(resolved);
+              } catch(resolveErr) {
+                console.error('EPUB Reader: Resolve also failed:', resolveErr);
+              }
+            });
+          } else {
+            console.error('EPUB Reader: Rendition or book not available');
+          }
+        } catch(e) {
+          console.error('EPUB Reader: Navigation error:', e.message);
+        }
+      })();
       true;
     `);
     setTocVisible(false);
@@ -244,23 +386,189 @@ export default function EpubReaderScreen() {
   };
 
   const addBookmark = () => {
-    BookService.addBookmark(book.id, currentLocation, 'Bookmark');
+    console.log(
+      'Opening bookmark dialog for book:',
+      book.id,
+      'at location:',
+      currentLocation,
+    );
+    if (!currentLocation) {
+      console.error('Cannot add bookmark: no current location');
+      return;
+    }
+    // Pre-fill with default title
+    setBookmarkTitle(`Bookmark at ${Math.round(progress * 100)}%`);
+    setBookmarkDescription('');
     setMenuVisible(false);
+    setBookmarkDialogVisible(true);
   };
 
-  const changeTheme = (themeName: ThemeType) => {
-    const t = Themes[themeName];
+  const saveBookmark = async () => {
+    if (!currentLocation) return;
+
+    try {
+      await BookService.addBookmark(
+        book.id,
+        currentLocation,
+        bookmarkTitle || `Bookmark at ${Math.round(progress * 100)}%`,
+      );
+      console.log('Bookmark added successfully');
+      setToastMessage('Bookmark saved successfully');
+      setToastVisible(true);
+      // Reload bookmarks after adding
+      loadBookmarks();
+    } catch (error) {
+      console.error('Failed to add bookmark:', error);
+      setToastMessage('Failed to save bookmark');
+      setToastVisible(true);
+    }
+    setBookmarkDialogVisible(false);
+  };
+
+  const loadBookmarks = async () => {
+    try {
+      const bookBookmarks = await BookService.getBookmarks(book.id);
+      console.log('Loaded bookmarks:', bookBookmarks.length);
+      setBookmarks(bookBookmarks);
+    } catch (error) {
+      console.error('Failed to load bookmarks:', error);
+    }
+  };
+
+  const goToBookmark = (cfi: string) => {
+    console.log('Navigating to bookmark:', cfi);
     webviewRef.current?.injectJavaScript(`
-      document.body.style.backgroundColor = '${t.background}';
-      document.body.style.color = '${t.text}';
+      (function() {
+        try {
+          if (window.rendition) {
+            window.rendition.display('${cfi}').then(function() {
+              console.log('EPUB Reader: Navigated to bookmark');
+            }).catch(function(err) {
+              console.error('EPUB Reader: Failed to navigate to bookmark:', err);
+            });
+          }
+        } catch(e) {
+          console.error('EPUB Reader: Bookmark navigation error:', e.message);
+        }
+      })();
+      true;
+    `);
+    setBookmarksVisible(false);
+  };
+
+  const handleSearch = () => {
+    if (!searchQuery.trim()) return;
+
+    console.log('🔍 Search started for:', searchQuery);
+    setIsSearching(true);
+    setSearchResults([]);
+
+    const escapedQuery = searchQuery.replace(/'/g, "\\'");
+    console.log('🔍 Escaped query:', escapedQuery);
+
+    webviewRef.current?.injectJavaScript(`
+      (function() {
+        console.log('🔍 [WebView] Starting search for: ${escapedQuery}');
+        if (window.book) {
+          console.log('🔍 [WebView] Book available, calling search...');
+          window.book.search('${escapedQuery}').then(function(results) {
+            console.log('🔍 [WebView] Search completed. Results:', JSON.stringify(results, null, 2));
+            console.log('🔍 [WebView] Found', results.length, 'matches');
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'searchResults',
+              results: results,
+              query: '${escapedQuery}'
+            }));
+          }).catch(function(err) {
+            console.error('🔍 [WebView] Search error:', err);
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'searchResults',
+              results: [],
+              error: err.message
+            }));
+          });
+        } else {
+          console.error('🔍 [WebView] Book not available for search');
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'searchResults',
+            results: [],
+            error: 'Book not loaded'
+          }));
+        }
+      })();
       true;
     `);
   };
 
+  const goToSearchResult = (cfi: string) => {
+    console.log('Navigating to search result:', cfi);
+    webviewRef.current?.injectJavaScript(`
+      (function() {
+        try {
+          if (window.rendition) {
+            window.rendition.display('${cfi}').then(function() {
+              console.log('EPUB Reader: Navigated to search result');
+            }).catch(function(err) {
+              console.error('EPUB Reader: Failed to navigate:', err);
+            });
+          }
+        } catch(e) {
+          console.error('EPUB Reader: Navigation error:', e.message);
+        }
+      })();
+      true;
+    `);
+    setSearchVisible(false);
+  };
+
+  const changeTheme = async (themeName: ThemeType) => {
+    console.log('Changing theme to:', themeName);
+    const t = Themes[themeName];
+
+    // Update WebView body
+    webviewRef.current?.injectJavaScript(`
+      (function() {
+        document.body.style.backgroundColor = '${t.background}';
+        document.body.style.color = '${t.text}';
+        // Update iframe content if exists
+        var iframes = document.querySelectorAll('iframe');
+        if (iframes.length > 0) {
+          var iframe = iframes[0];
+          try {
+            var doc = iframe.contentDocument || iframe.contentWindow.document;
+            doc.body.style.backgroundColor = '${t.background}';
+            doc.body.style.color = '${t.text}';
+            // Force all elements to have new text color
+            var allElements = doc.querySelectorAll('*');
+            for (var i = 0; i < allElements.length; i++) {
+              allElements[i].style.color = '${t.text}';
+            }
+            console.log('EPUB Reader: Theme updated to ${themeName}');
+          } catch(e) {
+            console.log('EPUB Reader: Could not update iframe theme:', e.message);
+          }
+        }
+      })();
+      true;
+    `);
+
+    // Save theme setting to both service and store
+    try {
+      await SettingsService.updateReaderSettings({ theme: themeName });
+      updateReaderSetting('theme', themeName);
+      console.log('Theme saved to settings and store:', themeName);
+    } catch (error) {
+      console.error('Failed to save theme:', error);
+    }
+
+    setMenuVisible(false);
+  };
+
   const htmlContent = `
     <!DOCTYPE html>
-    <html>
+    <html dir="auto">
     <head>
+      <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
       <script>
         // EPUB data passed from React Native
@@ -274,23 +582,47 @@ export default function EpubReaderScreen() {
         console.log('EPUB Reader: EPUB data available:', !!window.epubBase64Data, 'Length:', window.epubBase64Data ? window.epubBase64Data.length : 0);
       </script>
       <style>
+        @import url('https://fonts.googleapis.com/css2?family=Amiri&family=Noto+Naskh+Arabic&display=swap');
+
         html, body {
           margin: 0;
           padding: 0;
           width: 100%;
           height: 100%;
           overflow: hidden;
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Naskh Arabic', 'Amiri', serif;
           background-color: ${currentTheme.background};
           color: ${currentTheme.text};
+          -webkit-font-smoothing: antialiased;
+          -moz-osx-font-smoothing: grayscale;
+          text-rendering: optimizeLegibility;
+        }
+
+        /* RTL Support for Arabic text */
+        [dir="rtl"] {
+          direction: rtl;
+          text-align: right;
+        }
+
+        /* Arabic text styling */
+        .arabic, [lang="ar"], .quran-text {
+          font-family: 'Amiri', 'Noto Naskh Arabic', 'Traditional Arabic', serif;
+          font-size: 1.2em;
+          line-height: 2;
+          direction: rtl;
+          text-align: right;
         }
         #viewer {
           width: 100vw;
           height: 100vh;
-          overflow: hidden;
+          overflow: auto;
           position: relative;
           z-index: 1;
           background-color: ${currentTheme.background};
+        }
+        #viewer iframe {
+          overflow-y: auto !important;
+          overflow-x: hidden !important;
         }
         #loading-indicator {
           position: fixed;
@@ -452,7 +784,8 @@ export default function EpubReaderScreen() {
             window.rendition = book.renderTo("viewer", {
               width: "100%",
               height: "100%",
-              spread: "none"
+              spread: "none",
+              flow: "scrolled-doc"
             });
             console.log('EPUB Reader: Rendition created');
 
@@ -484,26 +817,132 @@ export default function EpubReaderScreen() {
               var iframes = document.querySelectorAll('iframe');
               if (iframes.length > 0) {
                 var iframe = iframes[0];
-                // Force iframe visibility
+                // Force iframe visibility and dimensions
                 iframe.style.visibility = 'visible';
                 iframe.style.display = 'block';
                 iframe.style.opacity = '1';
                 iframe.style.border = 'none';
                 iframe.style.backgroundColor = '${currentTheme.background}';
+                iframe.style.width = '100%';
+                // For scrolled mode, height should be auto to show full content
+                iframe.style.height = 'auto';
+                iframe.style.minHeight = '100%';
+                iframe.style.position = 'relative';
+                iframe.style.top = '0';
+                iframe.style.left = '0';
+                iframe.style.overflow = 'visible';
 
                 // Try to access iframe content to ensure it's loaded
                 try {
                   var iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
                   console.log('EPUB Reader: Iframe content accessible, body exists:', !!iframeDoc.body);
                   if (iframeDoc.body) {
+                    // DEBUG: Check body content
+                    console.log('EPUB Reader: Body text length:', iframeDoc.body.innerText ? iframeDoc.body.innerText.length : 0);
+                    console.log('EPUB Reader: Body innerHTML length:', iframeDoc.body.innerHTML.length);
+
                     iframeDoc.body.style.backgroundColor = '${
                       currentTheme.background
                     }';
                     iframeDoc.body.style.color = '${currentTheme.text}';
+
+                    // Add RTL and Arabic font support to iframe - use system fonts for reliability
+                    var style = iframeDoc.createElement('style');
+                    style.textContent = \`
+                      * {
+                        visibility: visible !important;
+                        opacity: 1 !important;
+                        color: ${currentTheme.text} !important;
+                        background-color: transparent !important;
+                      }
+
+                      body, html {
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans Arabic', 'Arial', sans-serif !important;
+                        -webkit-font-smoothing: antialiased;
+                        -moz-osx-font-smoothing: grayscale;
+                        text-rendering: optimizeLegibility;
+                        visibility: visible !important;
+                        opacity: 1 !important;
+                        display: block !important;
+                        color: ${currentTheme.text} !important;
+                        background-color: ${currentTheme.background} !important;
+                      }
+
+                      p, span, div, h1, h2, h3, h4, h5, h6, li, td, th, label {
+                        color: ${currentTheme.text} !important;
+                      }
+
+                      [dir="rtl"], [lang="ar"] {
+                        direction: rtl;
+                        text-align: right;
+                        font-family: 'Noto Sans Arabic', 'Arial', sans-serif !important;
+                      }
+
+                      .arabic, .quran-text, [lang="ar"] {
+                        font-family: 'Noto Sans Arabic', 'Traditional Arabic', 'Arial', sans-serif !important;
+                        font-size: 1.2em;
+                        line-height: 2;
+                        direction: rtl;
+                        text-align: right;
+                        color: ${currentTheme.text} !important;
+                      }
+
+                      a {
+                        color: ${currentTheme.text} !important;
+                        text-decoration: underline;
+                      }
+                    \`;
+                    iframeDoc.head.appendChild(style);
+
+                    // Add click handler to iframe body for toggling controls
+                    var clickHandler = function(e) {
+                      console.log('EPUB Reader: CLICK detected on', e.target.tagName, 'isSwipe:', isSwipe);
+                      // Don't trigger if a swipe was detected
+                      if (isSwipe !== false) {
+                        console.log('EPUB Reader: Ignoring click because swipe was detected');
+                        return;
+                      }
+                      // Don't trigger if clicking on a link or interactive element
+                      var tagName = e.target.tagName.toLowerCase();
+                      if (tagName === 'a' || tagName === 'button' || tagName === 'input') {
+                        console.log('EPUB Reader: Ignoring click on interactive element:', tagName);
+                        return;
+                      }
+                      // Check if clicked element is inside a link
+                      var parentLink = e.target.closest('a');
+                      if (parentLink) {
+                        console.log('EPUB Reader: Ignoring click inside link');
+                        return;
+                      }
+                      console.log('EPUB Reader: Sending click message to RN');
+                      window.ReactNativeWebView.postMessage(JSON.stringify({
+                        type: 'click'
+                      }));
+                    };
+
+                    // Add to body - only use click event, not touchend (to avoid swipe conflicts)
+                    iframeDoc.body.addEventListener('click', clickHandler);
+                    console.log('EPUB Reader: Click handlers added to iframe body');
+
+                    // Also add to document for better coverage
+                    iframeDoc.addEventListener('click', clickHandler);
+                    console.log('EPUB Reader: Click handler also added to iframe document');
                   }
                 } catch(e) {
-                  console.log('EPUB Reader: Cannot access iframe content (cross-origin)');
+                  console.log('EPUB Reader: Cannot access iframe content (cross-origin):', e.message);
                 }
+
+                // Fallback: add click handler to iframe element itself
+                iframe.addEventListener('click', function(e) {
+                  console.log('EPUB Reader: Fallback iframe click detected, isSwipe:', isSwipe);
+                  if (isSwipe !== false) {
+                    console.log('EPUB Reader: Ignoring fallback click because swipe was detected');
+                    return;
+                  }
+                  window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'click'
+                  }));
+                });
               }
             });
 
@@ -513,56 +952,165 @@ export default function EpubReaderScreen() {
               showError('Display error: ' + (err.message || err));
             });
 
+            // Store spine items for progress calculation
+            var spineItems = [];
+            book.loaded.spine.then(function(spine) {
+              spineItems = spine.spineItems || [];
+              console.log('EPUB Reader: Spine loaded with', spineItems.length, 'items');
+            });
+
             window.rendition.on("relocated", function(location) {
+              console.log('EPUB Reader: Relocated event:', JSON.stringify(location));
+
+              // Calculate book-level progress based on current section
+              var currentSectionIndex = 0;
+              var totalSections = spineItems.length || 1;
+
+              // Find current section index
+              if (location.start && location.start.index !== undefined) {
+                currentSectionIndex = location.start.index;
+              } else if (window.rendition && window.rendition.location) {
+                var currentHref = window.rendition.location.start.href;
+                for (var i = 0; i < spineItems.length; i++) {
+                  if (spineItems[i].href === currentHref) {
+                    currentSectionIndex = i;
+                    break;
+                  }
+                }
+              }
+
+              // Calculate overall progress: (current section / total sections) + (position within section)
+              var sectionProgress = currentSectionIndex / totalSections;
+              var withinSectionProgress = (1 / totalSections) * (location.start.percentage || 0);
+              var overallProgress = sectionProgress + withinSectionProgress;
+
+              console.log('EPUB Reader: Progress calculated - Section:', currentSectionIndex, '/', totalSections, '= ', overallProgress);
+
               window.ReactNativeWebView.postMessage(JSON.stringify({
                 type: 'location',
                 cfi: location.start.cfi,
-                progress: location.start.percentage
+                progress: overallProgress
               }));
+            });
+
+            // For scrolled mode, also listen to scroll events for progress updates
+            window.rendition.on("rendered", function(section) {
+              var iframe = document.querySelector('iframe');
+              if (iframe && iframe.contentDocument) {
+                var iframeDoc = iframe.contentDocument;
+                var scrollHandler = function() {
+                  var scrollTop = iframeDoc.documentElement.scrollTop || iframeDoc.body.scrollTop;
+                  var scrollHeight = iframeDoc.documentElement.scrollHeight || iframeDoc.body.scrollHeight;
+                  var clientHeight = iframeDoc.documentElement.clientHeight || iframeDoc.body.clientHeight;
+                  var scrollPercentage = scrollHeight > clientHeight ? scrollTop / (scrollHeight - clientHeight) : 0;
+
+                  // Calculate overall progress
+                  var currentSectionIndex = 0;
+                  var totalSections = spineItems.length || 1;
+
+                  // Find current section index
+                  if (section && section.href) {
+                    for (var i = 0; i < spineItems.length; i++) {
+                      if (spineItems[i].href === section.href) {
+                        currentSectionIndex = i;
+                        break;
+                      }
+                    }
+                  }
+
+                  var sectionProgress = currentSectionIndex / totalSections;
+                  var withinSectionProgress = (1 / totalSections) * scrollPercentage;
+                  var overallProgress = sectionProgress + withinSectionProgress;
+
+                  // Get current location
+                  var currentLocation = window.rendition.currentLocation();
+                  if (currentLocation && currentLocation.start) {
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                      type: 'location',
+                      cfi: currentLocation.start.cfi,
+                      progress: overallProgress
+                    }));
+                  }
+                };
+                iframeDoc.addEventListener('scroll', scrollHandler, { passive: true });
+              }
             });
 
             // Add swipe gesture support for page turning (on document for full coverage)
             var touchStartX = 0;
             var touchStartY = 0;
             var touchEndX = 0;
+            var touchEndY = 0;
             var isSwipe = false;
+            var swipeDebug = true; // Enable swipe debugging
 
-            document.addEventListener('touchstart', function(e) {
+            function handleTouchStart(e) {
               touchStartX = e.changedTouches[0].screenX;
               touchStartY = e.changedTouches[0].screenY;
               isSwipe = false;
-              console.log('EPUB Reader: touchstart at', touchStartX, touchStartY);
-            }, {passive: true});
+              if (swipeDebug) console.log('EPUB Swipe: touchstart at', touchStartX.toFixed(0), touchStartY.toFixed(0));
+            }
 
-            document.addEventListener('touchmove', function(e) {
-              // Detect if user is swiping horizontally
+            function handleTouchMove(e) {
               var diffX = Math.abs(e.changedTouches[0].screenX - touchStartX);
               var diffY = Math.abs(e.changedTouches[0].screenY - touchStartY);
-              if (diffX > 10 && diffX > diffY) {
-                isSwipe = true;
+              // Only detect horizontal swipes for page navigation
+              // Vertical swipes are left free for content scrolling
+              if (diffX > 25 && diffX > diffY * 1.2) {
+                isSwipe = 'horizontal';
               }
-            }, {passive: true});
+            }
 
-            document.addEventListener('touchend', function(e) {
+            function handleTouchEnd(e) {
               touchEndX = e.changedTouches[0].screenX;
-              var swipeThreshold = 50;
-              var diff = touchStartX - touchEndX;
+              touchEndY = e.changedTouches[0].screenY;
+              // Threshold for triggering swipe action (lower than move detection for responsiveness)
+              var swipeThreshold = 60;
+              var diffX = touchStartX - touchEndX;
+              var diffY = touchStartY - touchEndY;
+              var absDiffX = Math.abs(diffX);
+              var absDiffY = Math.abs(diffY);
 
-              console.log('EPUB Reader: touchend, diff:', diff, 'isSwipe:', isSwipe);
+              if (swipeDebug) {
+                console.log('EPUB Swipe: touchend, diffX:', diffX.toFixed(0),
+                  'diffY:', diffY.toFixed(0),
+                  'isSwipe:', isSwipe);
+              }
 
-              if (Math.abs(diff) > swipeThreshold && isSwipe) {
+              // Horizontal swipe - page navigation
+              if (absDiffX > swipeThreshold && isSwipe === 'horizontal') {
                 e.preventDefault();
-                if (diff > 0) {
-                  // Swipe left - go to next page
-                  console.log('EPUB Reader: Swipe left detected, going next');
+                e.stopPropagation();
+                if (diffX > 0) {
+                  console.log('EPUB Swipe: >>> SWIPE LEFT detected, going NEXT');
                   window.rendition.next();
                 } else {
-                  // Swipe right - go to previous page
-                  console.log('EPUB Reader: Swipe right detected, going prev');
+                  console.log('EPUB Swipe: <<< SWIPE RIGHT detected, going PREV');
                   window.rendition.prev();
                 }
               }
-            }, {passive: false});
+              else if (swipeDebug && (absDiffX > 20 || absDiffY > 20)) {
+                console.log('EPUB Swipe: Swipe detected but below threshold, ignoring');
+              }
+            }
+
+            // Attach to document
+            document.addEventListener('touchstart', handleTouchStart, {passive: true});
+            document.addEventListener('touchmove', handleTouchMove, {passive: true});
+            document.addEventListener('touchend', handleTouchEnd, {passive: false});
+
+            // Also attach to iframe when content loads
+            window.rendition.on('rendered', function(section) {
+              console.log('EPUB Swipe: Section rendered, attaching touch handlers to iframe');
+              var iframe = document.querySelector('iframe');
+              if (iframe && iframe.contentDocument) {
+                var iframeDoc = iframe.contentDocument;
+                iframeDoc.addEventListener('touchstart', handleTouchStart, {passive: true});
+                iframeDoc.addEventListener('touchmove', handleTouchMove, {passive: true});
+                iframeDoc.addEventListener('touchend', handleTouchEnd, {passive: false});
+                console.log('EPUB Swipe: Touch handlers attached to iframe');
+              }
+            });
 
             // Add keyboard navigation support
             document.addEventListener('keydown', function(e) {
@@ -590,12 +1138,14 @@ export default function EpubReaderScreen() {
 
             // Tap to toggle controls - use document for full coverage
             document.addEventListener('click', function(e) {
-              // Only trigger if not swiping (isSwipe will be true if user swiped)
-              if (!isSwipe) {
+              // Only trigger if not swiping (isSwipe will be false if no swipe occurred)
+              if (isSwipe === false) {
                 console.log('EPUB Reader: Tap detected, toggling controls');
                 window.ReactNativeWebView.postMessage(JSON.stringify({
                   type: 'click'
                 }));
+              } else {
+                console.log('EPUB Reader: Ignoring tap because swipe was detected:', isSwipe);
               }
               // Reset isSwipe for next interaction
               isSwipe = false;
@@ -659,6 +1209,39 @@ export default function EpubReaderScreen() {
       </View>
     );
   }
+
+  // Recursive function to render TOC items with proper nesting
+  const renderTocItems = (items: TocItem[], level: number) => {
+    return items.map((item, index) => (
+      <View key={`${level}-${index}`}>
+        <Pressable
+          onPress={() => {
+            console.log('TOC item PRESSED:', item.label, 'href:', item.href);
+            goToLocation(item.href);
+            setTocVisible(false);
+          }}
+          style={({ pressed }) => [
+            styles.tocItem,
+            { paddingLeft: 16 + level * 20 },
+            pressed && { backgroundColor: theme.colors.primary + '20' },
+          ]}
+          android_ripple={{ color: theme.colors.primary + '20' }}
+        >
+          <View style={styles.tocItemContent}>
+            <Text
+              style={[styles.tocItemText, { color: theme.colors.onSurface }]}
+              numberOfLines={2}
+            >
+              {item.label}
+            </Text>
+          </View>
+        </Pressable>
+        {item.subitems &&
+          item.subitems.length > 0 &&
+          renderTocItems(item.subitems, level + 1)}
+      </View>
+    ));
+  };
 
   return (
     <View
@@ -762,44 +1345,212 @@ export default function EpubReaderScreen() {
           <View
             style={[styles.topBar, { backgroundColor: theme.colors.surface }]}
           >
-            <IconButton icon="arrow-left" onPress={() => navigation.goBack()} />
-            <Text numberOfLines={1} style={styles.title}>
-              {book.title}
-            </Text>
-            <Menu
-              visible={menuVisible}
-              onDismiss={() => setMenuVisible(false)}
-              anchor={
-                <IconButton
-                  icon="dots-vertical"
-                  onPress={() => setMenuVisible(true)}
+            {/* Title Row */}
+            <View style={styles.topBarRow}>
+              <IconButton
+                icon="arrow-left"
+                onPress={() => navigation.goBack()}
+              />
+              <Text
+                numberOfLines={1}
+                style={[styles.title, { color: theme.colors.onSurface }]}
+              >
+                {book.title}
+              </Text>
+              <Menu
+                visible={menuVisible}
+                onDismiss={() => setMenuVisible(false)}
+                anchor={
+                  <IconButton
+                    icon="dots-vertical"
+                    onPress={() => setMenuVisible(true)}
+                  />
+                }
+              >
+                <Menu.Item
+                  onPress={addBookmark}
+                  title="Add Bookmark"
+                  leadingIcon="bookmark"
                 />
-              }
-            >
-              <Menu.Item
-                onPress={addBookmark}
-                title="Add Bookmark"
-                leadingIcon="bookmark"
+                <Menu.Item
+                  onPress={() => {
+                    loadBookmarks();
+                    setBookmarksVisible(true);
+                  }}
+                  title="View Bookmarks"
+                  leadingIcon="bookmark-multiple"
+                />
+                <Menu.Item
+                  onPress={() => {
+                    setMenuVisible(false);
+                    setTocVisible(true);
+                  }}
+                  title="Table of Contents"
+                  leadingIcon="table-of-contents"
+                />
+                <Divider />
+                <Menu.Item
+                  onPress={() => changeTheme('light')}
+                  title="Light Theme"
+                />
+                <Menu.Item
+                  onPress={() => changeTheme('dark')}
+                  title="Dark Theme"
+                />
+                <Menu.Item
+                  onPress={() => changeTheme('sepia')}
+                  title="Sepia Theme"
+                />
+              </Menu>
+            </View>
+            {/* Search Row */}
+            <View style={styles.searchBarRow}>
+              <TextInput
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                mode="flat"
+                dense
+                placeholder="Search in book..."
+                onSubmitEditing={handleSearch}
+                style={[
+                  styles.topSearchInput,
+                  { backgroundColor: theme.colors.surfaceVariant },
+                ]}
+                left={<TextInput.Icon icon="magnify" />}
+                right={
+                  searchQuery ? (
+                    <TextInput.Icon
+                      icon="close"
+                      onPress={() => setSearchQuery('')}
+                    />
+                  ) : undefined
+                }
               />
-              <Menu.Item
-                onPress={() => setTocVisible(true)}
-                title="Table of Contents"
-                leadingIcon="table-of-contents"
-              />
-              <Divider />
-              <Menu.Item
-                onPress={() => changeTheme('light')}
-                title="Light Theme"
-              />
-              <Menu.Item
-                onPress={() => changeTheme('dark')}
-                title="Dark Theme"
-              />
-              <Menu.Item
-                onPress={() => changeTheme('sepia')}
-                title="Sepia Theme"
-              />
-            </Menu>
+            </View>
+            {/* Search Results Dropdown */}
+            {/* Search Loading Indicator */}
+            {isSearching && (
+              <View style={styles.searchLoadingContainer}>
+                <ActivityIndicator size="small" color={theme.colors.primary} />
+                <Text
+                  style={[
+                    styles.searchLoadingText,
+                    { color: theme.colors.onSurfaceVariant },
+                  ]}
+                >
+                  Searching...
+                </Text>
+              </View>
+            )}
+
+            {/* Search Results Dropdown */}
+            {!isSearching && searchResults.length > 0 && (
+              <Surface
+                style={[
+                  styles.searchResultsDropdown,
+                  { backgroundColor: theme.colors.surface },
+                ]}
+                elevation={4}
+              >
+                <View style={styles.searchResultsHeader}>
+                  <View style={styles.searchResultsTitle}>
+                    <IconButton
+                      icon="magnify"
+                      size={16}
+                      iconColor={theme.colors.primary}
+                    />
+                    <Text
+                      variant="labelMedium"
+                      style={{ color: theme.colors.primary }}
+                    >
+                      {searchResults.length} result
+                      {searchResults.length !== 1 ? 's' : ''} found
+                    </Text>
+                  </View>
+                  <IconButton
+                    icon="close"
+                    size={16}
+                    onPress={() => setSearchResults([])}
+                  />
+                </View>
+                <ScrollView style={styles.searchResultsList}>
+                  {searchResults.map((result, index) => (
+                    <Pressable
+                      key={index}
+                      onPress={() => {
+                        console.log('🔍 Result clicked:', result.cfi);
+                        if (result.cfi) {
+                          goToSearchResult(result.cfi);
+                        }
+                      }}
+                      style={({ pressed }) => [
+                        styles.searchResultRow,
+                        pressed && {
+                          backgroundColor: theme.colors.primary + '15',
+                        },
+                      ]}
+                      android_ripple={{ color: theme.colors.primary + '20' }}
+                    >
+                      <View style={styles.searchResultContent}>
+                        <Text
+                          style={[
+                            styles.searchResultSnippet,
+                            { color: theme.colors.onSurface },
+                          ]}
+                          numberOfLines={2}
+                        >
+                          {highlightSearchTerm(
+                            result.excerpt || result.text || 'No preview',
+                            searchQuery,
+                          )}
+                        </Text>
+                        {result.section && (
+                          <Text
+                            style={[
+                              styles.searchResultSection,
+                              { color: theme.colors.onSurfaceVariant },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {result.section}
+                          </Text>
+                        )}
+                      </View>
+                      <IconButton
+                        icon="chevron-right"
+                        size={16}
+                        iconColor={theme.colors.onSurfaceVariant}
+                      />
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </Surface>
+            )}
+
+            {/* No Results Message */}
+            {!isSearching && searchQuery && searchResults.length === 0 && (
+              <Surface
+                style={[
+                  styles.searchNoResults,
+                  { backgroundColor: theme.colors.surface },
+                ]}
+                elevation={2}
+              >
+                <IconButton
+                  icon="magnify-close"
+                  size={24}
+                  iconColor={theme.colors.onSurfaceVariant}
+                />
+                <Text
+                  style={[
+                    styles.searchNoResultsText,
+                    { color: theme.colors.onSurfaceVariant },
+                  ]}
+                >
+                  No results found for "{searchQuery}"
+                </Text>
+              </Surface>
+            )}
           </View>
 
           {/* Bottom Bar */}
@@ -821,6 +1572,8 @@ export default function EpubReaderScreen() {
         <Modal
           visible={tocVisible}
           onDismiss={() => setTocVisible(false)}
+          dismissable
+          dismissableBackButton
           contentContainerStyle={[
             styles.tocModal,
             { backgroundColor: theme.colors.surface },
@@ -830,15 +1583,241 @@ export default function EpubReaderScreen() {
             Table of Contents
           </Text>
           <Divider />
-          {toc.map((item, index) => (
-            <List.Item
-              key={index}
-              title={item.label}
-              onPress={() => goToLocation(item.href)}
-            />
-          ))}
+          <ScrollView style={styles.tocScrollView}>
+            {toc.length === 0 ? (
+              <Text style={styles.emptyTocText}>
+                No table of contents available
+              </Text>
+            ) : (
+              renderTocItems(toc, 0)
+            )}
+          </ScrollView>
         </Modal>
       </Portal>
+
+      {/* Bookmarks Modal */}
+      <Portal>
+        <Modal
+          visible={bookmarksVisible}
+          onDismiss={() => setBookmarksVisible(false)}
+          dismissable
+          dismissableBackButton
+          contentContainerStyle={[
+            styles.tocModal,
+            { backgroundColor: theme.colors.surface },
+          ]}
+        >
+          <Text variant="titleLarge" style={styles.tocTitle}>
+            Bookmarks
+          </Text>
+          <Divider />
+          <ScrollView style={styles.tocScrollView}>
+            {bookmarks.length === 0 ? (
+              <Text style={styles.emptyTocText}>No bookmarks yet</Text>
+            ) : (
+              bookmarks.map((bookmark, index) => (
+                <View key={bookmark.id || index}>
+                  <View style={styles.bookmarkRow}>
+                    <Pressable
+                      onPress={() => {
+                        console.log(
+                          'Bookmark pressed:',
+                          bookmark.note || 'Bookmark',
+                          'cfi:',
+                          bookmark.cfi,
+                        );
+                        if (bookmark.cfi) {
+                          goToBookmark(bookmark.cfi);
+                          setBookmarksVisible(false);
+                        }
+                      }}
+                      style={({ pressed }) => [
+                        styles.bookmarkInfo,
+                        pressed && {
+                          backgroundColor: theme.colors.primary + '20',
+                        },
+                      ]}
+                      android_ripple={{ color: theme.colors.primary + '20' }}
+                    >
+                      <Text
+                        style={[
+                          styles.tocItemText,
+                          { color: theme.colors.onSurface },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {bookmark.note ||
+                          `Bookmark at ${
+                            bookmark.createdAt
+                              ? new Date(
+                                  bookmark.createdAt,
+                                ).toLocaleDateString()
+                              : 'unknown'
+                          }`}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        if (bookmark.id) {
+                          console.log('Deleting bookmark:', bookmark.id);
+                          BookService.deleteBookmark(bookmark.id);
+                          setBookmarks(prev =>
+                            prev.filter(b => b.id !== bookmark.id),
+                          );
+                        }
+                      }}
+                      style={styles.bookmarkDelete}
+                    >
+                      <IconButton
+                        icon="delete"
+                        size={20}
+                        iconColor={theme.colors.error}
+                      />
+                    </Pressable>
+                  </View>
+                  <Divider />
+                </View>
+              ))
+            )}
+          </ScrollView>
+        </Modal>
+      </Portal>
+
+      {/* Add Bookmark Dialog */}
+      <Portal>
+        <Modal
+          visible={bookmarkDialogVisible}
+          onDismiss={() => setBookmarkDialogVisible(false)}
+          dismissable
+          dismissableBackButton
+          contentContainerStyle={[
+            styles.bookmarkDialog,
+            { backgroundColor: theme.colors.surface },
+          ]}
+        >
+          <Text variant="titleLarge" style={styles.dialogTitle}>
+            Add Bookmark
+          </Text>
+          <TextInput
+            label="Title"
+            value={bookmarkTitle}
+            onChangeText={setBookmarkTitle}
+            mode="outlined"
+            style={styles.dialogInput}
+            placeholder="Enter bookmark title"
+          />
+          <TextInput
+            label="Description (optional)"
+            value={bookmarkDescription}
+            onChangeText={setBookmarkDescription}
+            mode="outlined"
+            style={styles.dialogInput}
+            placeholder="Enter description"
+            multiline
+            numberOfLines={2}
+          />
+          <View style={styles.dialogButtons}>
+            <Button
+              mode="outlined"
+              onPress={() => setBookmarkDialogVisible(false)}
+              style={styles.dialogButton}
+            >
+              Cancel
+            </Button>
+            <Button
+              mode="contained"
+              onPress={saveBookmark}
+              style={styles.dialogButton}
+            >
+              Save
+            </Button>
+          </View>
+        </Modal>
+      </Portal>
+
+      {/* Search Modal */}
+      <Portal>
+        <Modal
+          visible={searchVisible}
+          onDismiss={() => setSearchVisible(false)}
+          dismissable
+          dismissableBackButton
+          contentContainerStyle={[
+            styles.searchModal,
+            { backgroundColor: theme.colors.surface },
+          ]}
+        >
+          <Text variant="titleLarge" style={styles.dialogTitle}>
+            Search
+          </Text>
+          <View style={styles.searchInputRow}>
+            <TextInput
+              label="Search text"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              mode="outlined"
+              style={styles.searchInput}
+              placeholder="Enter search term"
+              onSubmitEditing={handleSearch}
+            />
+            <Button
+              mode="contained"
+              onPress={handleSearch}
+              style={styles.searchButton}
+            >
+              Search
+            </Button>
+          </View>
+          <Divider style={styles.searchDivider} />
+          <ScrollView style={styles.searchResults}>
+            {searchResults.length === 0 ? (
+              searchQuery ? (
+                <Text style={styles.emptySearchText}>No results found</Text>
+              ) : (
+                <Text style={styles.emptySearchText}>Enter a search term</Text>
+              )
+            ) : (
+              searchResults.map((result, index) => (
+                <Pressable
+                  key={index}
+                  onPress={() => {
+                    if (result.cfi) {
+                      goToSearchResult(result.cfi);
+                    }
+                  }}
+                  style={({ pressed }) => [
+                    styles.searchResultItem,
+                    pressed && {
+                      backgroundColor: theme.colors.primary + '20',
+                    },
+                  ]}
+                  android_ripple={{ color: theme.colors.primary + '20' }}
+                >
+                  <Text
+                    style={[
+                      styles.searchResultText,
+                      { color: theme.colors.onSurface },
+                    ]}
+                    numberOfLines={2}
+                  >
+                    {result.excerpt || result.text || 'Result'}
+                  </Text>
+                </Pressable>
+              ))
+            )}
+          </ScrollView>
+        </Modal>
+      </Portal>
+
+      {/* Toast Notification */}
+      <Snackbar
+        visible={toastVisible}
+        onDismiss={() => setToastVisible(false)}
+        duration={2000}
+        style={{ backgroundColor: theme.colors.primary }}
+      >
+        {toastMessage}
+      </Snackbar>
     </View>
   );
 }
@@ -861,17 +1840,59 @@ const styles = StyleSheet.create({
     pointerEvents: 'box-none',
   },
   topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'column',
     paddingHorizontal: 8,
     paddingTop: 40,
     pointerEvents: 'auto',
+  },
+  topBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   title: {
     flex: 1,
     fontSize: 16,
     fontWeight: '600',
     marginHorizontal: 8,
+  },
+  searchBarRow: {
+    paddingHorizontal: 8,
+    paddingBottom: 8,
+  },
+  topSearchInput: {
+    height: 40,
+  },
+  searchResultsDropdown: {
+    marginHorizontal: 8,
+    marginBottom: 8,
+    borderRadius: 8,
+    maxHeight: 200,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  searchResultsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
+  },
+  searchResultsList: {
+    maxHeight: 160,
+  },
+  searchResultRow: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
+  },
+  searchResultSnippet: {
+    fontSize: 13,
   },
   bottomBar: {
     flexDirection: 'row',
@@ -892,5 +1913,134 @@ const styles = StyleSheet.create({
   },
   tocTitle: {
     marginBottom: 16,
+  },
+  tocItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 4,
+  },
+  tocItemText: {
+    fontSize: 16,
+  },
+  emptyTocText: {
+    textAlign: 'center',
+    paddingVertical: 20,
+    opacity: 0.6,
+  },
+  tocScrollView: {
+    maxHeight: height * 0.5,
+  },
+  tocItemContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  bookmarkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  bookmarkInfo: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    justifyContent: 'center',
+  },
+  bookmarkDelete: {
+    paddingHorizontal: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bookmarkDialog: {
+    margin: 20,
+    padding: 20,
+    borderRadius: 8,
+  },
+  dialogTitle: {
+    marginBottom: 16,
+  },
+  dialogInput: {
+    marginBottom: 12,
+  },
+  dialogButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 8,
+  },
+  dialogButton: {
+    marginLeft: 8,
+  },
+  searchModal: {
+    margin: 20,
+    padding: 20,
+    borderRadius: 8,
+    maxHeight: height * 0.8,
+  },
+  searchInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  searchInput: {
+    flex: 1,
+    marginRight: 8,
+  },
+  searchButton: {
+    marginTop: 6,
+  },
+  searchDivider: {
+    marginVertical: 12,
+  },
+  searchResults: {
+    maxHeight: height * 0.5,
+  },
+  emptySearchText: {
+    textAlign: 'center',
+    paddingVertical: 20,
+    opacity: 0.6,
+  },
+  searchResultItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 4,
+  },
+  searchResultText: {
+    fontSize: 14,
+  },
+  // New search UI styles
+  searchLoadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    marginHorizontal: 8,
+  },
+  searchLoadingText: {
+    marginLeft: 8,
+    fontSize: 14,
+  },
+  searchResultsTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  searchResultContent: {
+    flex: 1,
+    marginRight: 8,
+  },
+  searchResultSection: {
+    fontSize: 11,
+    marginTop: 4,
+    opacity: 0.7,
+  },
+  searchNoResults: {
+    marginHorizontal: 8,
+    marginBottom: 8,
+    paddingVertical: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  searchNoResultsText: {
+    fontSize: 14,
+    marginTop: 8,
   },
 });

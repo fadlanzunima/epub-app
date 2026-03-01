@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -6,9 +6,21 @@ import {
   RefreshControl,
   TouchableOpacity,
   Image,
+  ScrollView,
+  Animated,
 } from 'react-native';
-import { Text, Searchbar, IconButton, FAB, useTheme } from 'react-native-paper';
-import { useNavigation } from '@react-navigation/native';
+import {
+  Text,
+  Searchbar,
+  IconButton,
+  FAB,
+  useTheme,
+  Portal,
+  Dialog,
+  Button,
+} from 'react-native-paper';
+import { Swipeable } from 'react-native-gesture-handler';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 
 import { useBooks } from '../hooks/useBooks';
@@ -94,6 +106,7 @@ export default function LibraryScreen() {
     loading: isLoading,
     refresh: loadBooks,
     toggleFavorite,
+    deleteBook,
   } = useBooks();
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -103,6 +116,27 @@ export default function LibraryScreen() {
     StorageService.initializeStorage();
   }, []);
 
+  // Refresh books when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      console.log('LibraryScreen: Focus effect triggered, loading books...');
+      loadBooks();
+    }, [loadBooks]),
+  );
+
+  // Debug: Log books state changes
+  useEffect(() => {
+    console.log('LibraryScreen: Books updated, count:', books.length);
+    if (books.length > 0) {
+      console.log(
+        'LibraryScreen: First book:',
+        books[0].title,
+        'ID:',
+        books[0].id,
+      );
+    }
+  }, [books]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadBooks();
@@ -111,6 +145,7 @@ export default function LibraryScreen() {
 
   const handleImportBook = async () => {
     try {
+      console.log('LibraryScreen: Starting book import...');
       const result = await DocumentPicker.getDocumentAsync({
         type: [
           'application/epub+zip',
@@ -120,10 +155,21 @@ export default function LibraryScreen() {
         copyToCacheDirectory: true,
       });
 
+      console.log(
+        'LibraryScreen: Document picker result:',
+        result.canceled ? 'canceled' : 'success',
+      );
+
       if (result.canceled === false && result.assets && result.assets[0]) {
         const file = result.assets[0];
         const fileName = file.name || '';
         const extension = fileName.split('.').pop()?.toLowerCase();
+        console.log(
+          'LibraryScreen: Selected file:',
+          fileName,
+          'extension:',
+          extension,
+        );
 
         let fileType: BookFormat | null = null;
         if (extension === 'epub') fileType = 'epub';
@@ -131,13 +177,28 @@ export default function LibraryScreen() {
         else if (extension === 'mobi') fileType = 'mobi';
 
         if (fileType && file.uri) {
+          console.log('LibraryScreen: Importing book of type:', fileType);
           const book = await BookService.importBook(file.uri, fileType);
+          console.log(
+            'LibraryScreen: Book imported successfully:',
+            book.title,
+            'ID:',
+            book.id,
+          );
+          // Refresh book list to show the new book
+          await loadBooks();
+          console.log(
+            'LibraryScreen: Book list refreshed, count after import:',
+            books.length,
+          );
           // Navigate to reader screen after import
           handleBookPress(book);
+        } else {
+          console.error('LibraryScreen: Unsupported file type or missing URI');
         }
       }
     } catch (error) {
-      console.error('Error importing book:', error);
+      console.error('LibraryScreen: Error importing book:', error);
     }
   };
 
@@ -185,7 +246,12 @@ export default function LibraryScreen() {
       />
 
       {filteredBooks.length === 0 && !isLoading ? (
-        <View style={styles.emptyState}>
+        <ScrollView
+          contentContainerStyle={styles.emptyState}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+        >
           <IconButton
             icon="book-open-variant"
             size={64}
@@ -204,18 +270,44 @@ export default function LibraryScreen() {
           >
             Tap + to import your first book
           </Text>
-        </View>
+        </ScrollView>
       ) : (
         <FlatList
           data={filteredBooks}
           keyExtractor={item => item.id}
-          renderItem={({ item }) => (
-            <BookCard
-              book={item}
-              onPress={() => handleBookPress(item)}
-              onToggleFavorite={toggleFavorite}
-            />
-          )}
+          renderItem={({ item }) => {
+            const renderRightActions = (
+              progress: any,
+              dragX: any,
+              swipeable: Swipeable,
+            ) => {
+              return (
+                <TouchableOpacity
+                  style={[
+                    styles.deleteAction,
+                    { backgroundColor: theme.colors.error },
+                  ]}
+                  onPress={() => {
+                    swipeable.close();
+                    deleteBook(item.id);
+                  }}
+                >
+                  <IconButton icon="delete" iconColor="#fff" size={24} />
+                  <Text style={styles.deleteText}>Delete</Text>
+                </TouchableOpacity>
+              );
+            };
+
+            return (
+              <Swipeable renderRightActions={renderRightActions}>
+                <BookCard
+                  book={item}
+                  onPress={() => handleBookPress(item)}
+                  onToggleFavorite={toggleFavorite}
+                />
+              </Swipeable>
+            );
+          }}
           contentContainerStyle={styles.list}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -303,5 +395,17 @@ const styles = StyleSheet.create({
   emptySubtext: {
     fontSize: 14,
     marginTop: 8,
+  },
+  deleteAction: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    marginBottom: 12,
+    borderRadius: 8,
+  },
+  deleteText: {
+    color: '#fff',
+    fontSize: 12,
+    marginTop: -8,
   },
 });
