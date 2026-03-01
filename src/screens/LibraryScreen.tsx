@@ -18,7 +18,6 @@ import {
   Portal,
   Dialog,
   Button,
-  Avatar,
 } from 'react-native-paper';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -60,11 +59,10 @@ function BookCard({
               { backgroundColor: theme.colors.surfaceVariant },
             ]}
           >
-            <Avatar.Icon
-              size={60}
-              icon="book-open-variant"
-              style={{ backgroundColor: theme.colors.surfaceVariant }}
-              color={theme.colors.primary}
+            <IconButton
+              icon="book"
+              size={40}
+              iconColor={theme.colors.primary}
             />
           </View>
         )}
