@@ -42,6 +42,7 @@ function BookCard({
   onToggleFavorite: (id: string) => void;
 }) {
   const theme = useTheme();
+  const [imageError, setImageError] = useState(false);
 
   // Debug logging for cover image
   console.log(
@@ -50,22 +51,26 @@ function BookCard({
     book.coverImage?.substring(0, 50),
   );
 
+  // Show placeholder if no cover image or if image failed to load
+  const showPlaceholder = !book.coverImage || imageError;
+
   return (
     <TouchableOpacity onPress={onPress} style={styles.bookCard}>
       <View style={styles.coverContainer}>
-        {book.coverImage ? (
+        {!showPlaceholder ? (
           <Image
             source={{ uri: book.coverImage }}
             style={styles.coverImage}
             resizeMode="cover"
-            onError={e =>
+            onError={e => {
               console.log(
                 '📚 Image load error for',
                 book.title,
                 ':',
                 e.nativeEvent.error,
-              )
-            }
+              );
+              setImageError(true);
+            }}
             onLoad={() =>
               console.log('📚 Image loaded successfully for', book.title)
             }
