@@ -43,6 +43,13 @@ function BookCard({
 }) {
   const theme = useTheme();
 
+  // Debug logging for cover image
+  console.log(
+    `📚 Book "${book.title}" - coverImage:`,
+    book.coverImage ? 'EXISTS' : 'NULL',
+    book.coverImage?.substring(0, 50),
+  );
+
   return (
     <TouchableOpacity onPress={onPress} style={styles.bookCard}>
       <View style={styles.coverContainer}>
@@ -51,6 +58,17 @@ function BookCard({
             source={{ uri: book.coverImage }}
             style={styles.coverImage}
             resizeMode="cover"
+            onError={e =>
+              console.log(
+                '📚 Image load error for',
+                book.title,
+                ':',
+                e.nativeEvent.error,
+              )
+            }
+            onLoad={() =>
+              console.log('📚 Image loaded successfully for', book.title)
+            }
           />
         ) : (
           <View
