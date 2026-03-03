@@ -33,8 +33,9 @@ A cross-platform e-reader app built with React Native supporting EPUB, MOBI, and
 - Alternative: **react-native-epub-creator** + custom renderer
 
 #### PDF
-- **react-native-pdf** (based on Pdfium/iOS PDFKit)
-- **react-native-pdf-lib** for manipulation
+- **PDF.js** (via WebView) - Mozilla's PDF library loaded from CDN
+- Files read as base64 via `expo-file-system/legacy` for Expo compatibility
+- **react-native-pdf-lib** for future manipulation features
 
 #### MOBI/AZW
 - **mobi.js** or custom converter to EPUB
@@ -159,10 +160,12 @@ src/
 - Track reading position via CFI (Canonical Fragment Identifier)
 
 ### 2. PDF Reader
-- Use react-native-pdf for rendering
-- Horizontal/vertical scroll modes
-- Text search using pdf-lib
-- Page thumbnails for navigation
+- Use WebView with PDF.js (Mozilla's PDF library) for rendering
+- PDF files loaded as base64 via `expo-file-system/legacy`
+- Page navigation with prev/next buttons and page counter
+- Auto-save reading progress every 2 seconds + on unmount
+- **Expo Go compatible** - no native modules required
+- Metadata extraction from PDF structure (title, author, page count)
 
 ### 3. MOBI Support
 - Convert MOBI to EPUB format on import

@@ -26,6 +26,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useBooks } from '../hooks/useBooks';
 import { StorageService } from '../services/StorageService';
 import BookService from '../services/BookService';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Book, BookFormat } from '../types';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
@@ -43,16 +44,34 @@ function BookCard({
 }) {
   const theme = useTheme();
   const [imageError, setImageError] = useState(false);
+  const [coverExists, setCoverExists] = useState(!!book.coverImage);
 
-  // Debug logging for cover image
-  console.log(
-    `📚 Book "${book.title}" - coverImage:`,
-    book.coverImage ? 'EXISTS' : 'NULL',
-    book.coverImage?.substring(0, 50),
-  );
+  // Verify cover file exists on filesystem
+  useEffect(() => {
+    const checkCoverExists = async () => {
+      if (!book.coverImage) {
+        console.log(`📚 "${book.title}" - no coverImage set`);
+        setCoverExists(false);
+        return;
+      }
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(book.coverImage);
+        console.log(
+          `📚 "${book.title}" - cover check:`,
+          fileInfo.exists ? 'EXISTS' : 'NOT FOUND',
+          book.coverImage,
+        );
+        setCoverExists(fileInfo.exists);
+      } catch (error) {
+        console.log(`📚 Cover check failed for "${book.title}":`, error);
+        setCoverExists(false);
+      }
+    };
+    checkCoverExists();
+  }, [book.coverImage, book.title]);
 
-  // Show placeholder if no cover image or if image failed to load
-  const showPlaceholder = !book.coverImage || imageError;
+  // Show placeholder if no cover image, image failed to load, or file doesn't exist
+  const showPlaceholder = !coverExists || imageError;
 
   return (
     <TouchableOpacity onPress={onPress} style={styles.bookCard}>
@@ -92,13 +111,13 @@ function BookCard({
       </View>
       <View style={styles.bookInfo}>
         <Text numberOfLines={2} style={styles.bookTitle}>
-          {book.title}
+          {book.title || 'NO TITLE'}
         </Text>
         <Text
           numberOfLines={1}
           style={[styles.bookAuthor, { color: theme.colors.onSurfaceVariant }]}
         >
-          {book.author}
+          {book.author || 'NO AUTHOR'} ({book.fileType})
         </Text>
         <Text style={[styles.bookProgress, { color: theme.colors.primary }]}>
           {book.totalPages > 0
@@ -151,12 +170,15 @@ export default function LibraryScreen() {
   useEffect(() => {
     console.log('LibraryScreen: Books updated, count:', books.length);
     if (books.length > 0) {
-      console.log(
-        'LibraryScreen: First book:',
-        books[0].title,
-        'ID:',
-        books[0].id,
-      );
+      const firstBook = books[0];
+      console.log('LibraryScreen: First book details:', {
+        title: firstBook.title,
+        author: firstBook.author,
+        id: firstBook.id,
+        fileType: firstBook.fileType,
+        coverImage: firstBook.coverImage || '(none)',
+        filePath: firstBook.filePath?.substring(0, 50) + '...',
+      });
     }
   }, [books]);
 

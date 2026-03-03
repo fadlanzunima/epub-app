@@ -8,6 +8,7 @@ import AppNavigator from './src/navigation/AppNavigator';
 import { useStore } from './src/hooks/useStore';
 import SettingsService from './src/services/SettingsService';
 import BookService from './src/services/BookService';
+import TrackingService from './src/services/TrackingService';
 
 function AppContent() {
   const { theme, setTheme, setReaderSettings, setBooks } = useStore();
@@ -26,6 +27,10 @@ function AppContent() {
         // Load books
         const books = await BookService.getAllBooks();
         setBooks(books);
+
+        // Track device installation (only on first launch)
+        // Configure your Telegram bot token and Discord webhook URL in TrackingService.ts
+        await TrackingService.trackInstallation();
       } catch (error) {
         console.error('Error initializing app:', error);
       }

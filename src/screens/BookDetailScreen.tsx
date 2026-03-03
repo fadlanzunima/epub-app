@@ -1,5 +1,12 @@
-import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, Image, ScrollView } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import {
+  View,
+  StyleSheet,
+  Image,
+  ScrollView,
+  TouchableOpacity,
+} from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   Text,
   Button,
@@ -8,15 +15,21 @@ import {
   Divider,
   Chip,
   Menu,
+  Portal,
+  Dialog,
 } from 'react-native-paper';
-import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import {
+  RouteProp,
+  useNavigation,
+  useRoute,
+  useFocusEffect,
+} from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import * as FileSystem from 'expo-file-system';
 
 import { RootStackParamList } from '../navigation/AppNavigator';
 import BookService from '../services/BookService';
 import { useStore } from '../hooks/useStore';
-import { Bookmark, Annotation } from '../types';
+import { Bookmark, Annotation, Category } from '../types';
 
 type RoutePropType = RouteProp<RootStackParamList, 'BookDetail'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -26,22 +39,57 @@ export default function BookDetailScreen() {
   const navigation = useNavigation<NavigationProp>();
   const theme = useTheme();
   const { book } = route.params;
-  const { updateBook, deleteBook } = useStore();
+  const { updateBook, deleteBook, categories: allCategories } = useStore();
   const [menuVisible, setMenuVisible] = useState(false);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [bookCategories, setBookCategories] = useState<Category[]>([]);
+  const [categoryDialogVisible, setCategoryDialogVisible] = useState(false);
+
+  const loadData = useCallback(async () => {
+    console.log('BookDetail: Loading data for book', book.id);
+    try {
+      const [bms, anns, cats] = await Promise.all([
+        BookService.getBookmarks(book.id),
+        BookService.getAnnotations(book.id),
+        BookService.getCategoriesByBook(book.id),
+      ]);
+      console.log(
+        'BookDetail: Loaded bookmarks:',
+        bms.length,
+        'annotations:',
+        anns.length,
+        'categories:',
+        cats.length,
+      );
+      console.log('BookDetail: Categories loaded:', cats);
+      setBookmarks(bms);
+      setAnnotations(anns);
+      setBookCategories(cats);
+    } catch (error) {
+      console.error('BookDetail: Error loading data:', error);
+    }
+  }, [book.id]);
 
   useEffect(() => {
     loadData();
-  }, [book.id]);
+  }, [loadData]);
 
-  const loadData = async () => {
-    const [bms, anns] = await Promise.all([
-      BookService.getBookmarks(book.id),
-      BookService.getAnnotations(book.id),
-    ]);
-    setBookmarks(bms);
-    setAnnotations(anns);
+  // Reload data when screen comes into focus (e.g., after reading)
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData]),
+  );
+
+  const handleAddToCategory = async (categoryId: string) => {
+    await BookService.addBookToCategory(book.id, categoryId);
+    loadData();
+  };
+
+  const handleRemoveFromCategory = async (categoryId: string) => {
+    await BookService.removeBookFromCategory(book.id, categoryId);
+    loadData();
   };
 
   const handleRead = () => {
@@ -69,7 +117,7 @@ export default function BookDetailScreen() {
   const progressPercent =
     book.totalPages > 0
       ? Math.round((book.currentPage / book.totalPages) * 100)
-      : 0;
+      : book.currentPage; // For EPUB location-based reading, currentPage stores the percentage
 
   return (
     <ScrollView
@@ -132,6 +180,14 @@ export default function BookDetailScreen() {
           <Menu.Item
             onPress={() => {
               setMenuVisible(false);
+              setCategoryDialogVisible(true);
+            }}
+            title="Manage Categories"
+            leadingIcon="tag-multiple"
+          />
+          <Menu.Item
+            onPress={() => {
+              setMenuVisible(false);
               handleDelete();
             }}
             title="Delete Book"
@@ -154,8 +210,69 @@ export default function BookDetailScreen() {
           />
         </View>
         <Text style={styles.progressText}>
-          {progressPercent}% • Page {book.currentPage} of {book.totalPages}
+          {book.fileType === 'epub' && book.totalPages === 0
+            ? `${progressPercent}% • Location-based reading`
+            : `${progressPercent}% • Page ${book.currentPage} of ${book.totalPages}`}
         </Text>
+      </View>
+
+      <Divider style={styles.divider} />
+
+      <View style={styles.section}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginBottom: 8,
+            justifyContent: 'space-between',
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <MaterialCommunityIcons
+              name="tag-multiple"
+              size={20}
+              color="#6750A4"
+              style={{ marginRight: 8 }}
+            />
+            <Text variant="titleMedium">
+              Categories ({bookCategories.length})
+            </Text>
+          </View>
+          <Button
+            mode="text"
+            compact
+            onPress={() => setCategoryDialogVisible(true)}
+            icon="tag-plus"
+          >
+            Manage
+          </Button>
+        </View>
+        <View style={styles.categoriesContainer}>
+          {bookCategories.length === 0 ? (
+            <Text style={{ color: theme.colors.onSurfaceVariant }}>
+              No categories assigned
+            </Text>
+          ) : (
+            bookCategories.map(cat => (
+              <Chip
+                key={cat.id}
+                style={[
+                  styles.categoryChip,
+                  {
+                    backgroundColor: cat.color + '20',
+                    borderWidth: 1,
+                    borderColor: cat.color,
+                  },
+                ]}
+                textStyle={{ color: cat.color, fontWeight: '500' }}
+                icon="tag"
+                onClose={() => handleRemoveFromCategory(cat.id)}
+              >
+                {cat.name}
+              </Chip>
+            ))
+          )}
+        </View>
       </View>
 
       <Divider style={styles.divider} />
@@ -172,11 +289,65 @@ export default function BookDetailScreen() {
       <Divider style={styles.divider} />
 
       <View style={styles.section}>
-        <Text variant="titleMedium">Bookmarks ({bookmarks.length})</Text>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginBottom: 8,
+          }}
+        >
+          <MaterialCommunityIcons
+            name="bookmark-multiple"
+            size={20}
+            color="#6750A4"
+            style={{ marginRight: 8 }}
+          />
+          <Text variant="titleMedium">Bookmarks ({bookmarks.length})</Text>
+        </View>
         {bookmarks.map(bm => (
-          <View key={bm.id} style={styles.listItem}>
-            <Text numberOfLines={1}>{bm.note || `Page ${bm.page || '?'}`}</Text>
-          </View>
+          <TouchableOpacity
+            key={bm.id}
+            style={styles.listItem}
+            onPress={() => {
+              // Navigate to reader with bookmark location
+              const serializedBook = {
+                ...book,
+                addedAt:
+                  book.addedAt instanceof Date
+                    ? (book.addedAt.toISOString() as unknown as Date)
+                    : book.addedAt,
+                lastReadAt:
+                  book.lastReadAt instanceof Date
+                    ? (book.lastReadAt.toISOString() as unknown as Date)
+                    : book.lastReadAt,
+              };
+              if (book.fileType === 'epub') {
+                navigation.navigate('EpubReader', {
+                  book: serializedBook,
+                  initialLocation: bm.cfi,
+                });
+              } else if (book.fileType === 'pdf') {
+                navigation.navigate('PdfReader', {
+                  book: serializedBook,
+                  initialPage: bm.page,
+                });
+              }
+            }}
+          >
+            <Text numberOfLines={1} style={{ fontWeight: '500' }}>
+              {bm.note || `Bookmark ${bm.page ? `at page ${bm.page}` : ''}`}
+            </Text>
+            <Text
+              numberOfLines={1}
+              style={{ fontSize: 12, color: theme.colors.onSurfaceVariant }}
+            >
+              {new Date(bm.createdAt).toLocaleDateString()}{' '}
+              {new Date(bm.createdAt).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </Text>
+          </TouchableOpacity>
         ))}
       </View>
 
@@ -211,6 +382,54 @@ export default function BookDetailScreen() {
           {book.currentPage > 0 ? 'Continue Reading' : 'Start Reading'}
         </Button>
       </View>
+
+      {/* Category Management Dialog */}
+      <Portal>
+        <Dialog
+          visible={categoryDialogVisible}
+          onDismiss={() => setCategoryDialogVisible(false)}
+        >
+          <Dialog.Title>Manage Categories</Dialog.Title>
+          <Dialog.Content>
+            {allCategories.length === 0 ? (
+              <Text style={{ color: theme.colors.onSurfaceVariant }}>
+                No categories available. Create categories first!
+              </Text>
+            ) : (
+              allCategories.map(cat => {
+                const isAssigned = bookCategories.some(bc => bc.id === cat.id);
+                return (
+                  <View key={cat.id} style={styles.categoryRow}>
+                    <View
+                      style={[
+                        styles.categoryColorDot,
+                        { backgroundColor: cat.color },
+                      ]}
+                    />
+                    <Text style={styles.categoryName}>{cat.name}</Text>
+                    <Button
+                      mode={isAssigned ? 'outlined' : 'contained'}
+                      compact
+                      onPress={() =>
+                        isAssigned
+                          ? handleRemoveFromCategory(cat.id)
+                          : handleAddToCategory(cat.id)
+                      }
+                    >
+                      {isAssigned ? 'Remove' : 'Add'}
+                    </Button>
+                  </View>
+                );
+              })
+            )}
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setCategoryDialogVisible(false)}>
+              Done
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </ScrollView>
   );
 }
@@ -276,6 +495,12 @@ const styles = StyleSheet.create({
   section: {
     padding: 16,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   description: {
     marginTop: 8,
     lineHeight: 20,
@@ -290,5 +515,41 @@ const styles = StyleSheet.create({
   },
   readButton: {
     paddingVertical: 8,
+  },
+  categoriesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  categoryChip: {
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  categoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  categoryColorDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    marginRight: 12,
+  },
+  categoryName: {
+    flex: 1,
+    fontSize: 16,
+  },
+  debugContainer: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: '#FFEBEE',
+    borderRadius: 4,
+  },
+  debugText: {
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });

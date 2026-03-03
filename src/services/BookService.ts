@@ -11,6 +11,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 import { v4 as uuidv4 } from 'uuid';
 import JSZip from 'jszip';
+import { extractPdfMetadata } from '../utils/pdfHelpers';
 
 const BOOKS_DIR = FileSystem.documentDirectory
   ? `${FileSystem.documentDirectory}books/`
@@ -78,11 +79,20 @@ class BookService {
 
     // Extract metadata (basic implementation)
     console.log('BookService: Extracting metadata...');
-    const metadata = await this.extractMetadata(destPath, fileType);
+    const originalFileName = fileName.replace(/\.[^/.]+$/, '');
+    const metadata = await this.extractMetadata(
+      destPath,
+      fileType,
+      originalFileName,
+    );
     console.log('BookService: Metadata extracted:', metadata);
 
-    // Generate cover image placeholder
-    const coverPath = Platform.OS === 'web' ? '' : `${COVERS_DIR}${bookId}.jpg`;
+    // Generate cover image path
+    // EPUB: will extract from file, PDF: no thumbnail for now (would need native library)
+    let coverPath = '';
+    if (Platform.OS !== 'web' && fileType === 'epub') {
+      coverPath = `${COVERS_DIR}${bookId}.jpg`;
+    }
 
     const book: Book = {
       id: bookId,
@@ -101,17 +111,23 @@ class BookService {
     console.log('BookService: Created book object:', {
       id: book.id,
       title: book.title,
+      author: book.author,
+      fileName: fileName,
+      fileType: fileType,
+      metadataTitle: metadata.title,
     });
 
     console.log('BookService: Adding book to database...');
     await DatabaseService.addBook(book);
     console.log('BookService: Book added to database successfully');
+
     return book;
   }
 
   private async extractMetadata(
     filePath: string,
     fileType: BookFormat,
+    originalFileName?: string,
   ): Promise<{
     title?: string;
     author?: string;
@@ -120,6 +136,14 @@ class BookService {
   }> {
     if (fileType === 'epub') {
       return this.extractEpubMetadata(filePath);
+    } else if (fileType === 'pdf') {
+      const pdfMetadata = await extractPdfMetadata(filePath, originalFileName);
+      return {
+        title: pdfMetadata.title,
+        author: pdfMetadata.author,
+        description: pdfMetadata.subject,
+        totalPages: pdfMetadata.pageCount,
+      };
     }
     return {};
   }
@@ -314,6 +338,10 @@ class BookService {
     return DatabaseService.getBooksByCategory(categoryId);
   }
 
+  async getCategoriesByBook(bookId: string): Promise<Category[]> {
+    return DatabaseService.getCategoriesByBook(bookId);
+  }
+
   // Bookmark management
   async addBookmark(
     bookId: string,
@@ -359,7 +387,7 @@ class BookService {
   }
 
   async getAnnotations(bookId: string): Promise<Annotation[]> {
-    return DatabaseService.getAnnotationsByBookId(bookId);
+    return DatabaseService.getAnnotationsByBook(bookId);
   }
 
   async deleteAnnotation(id: string): Promise<void> {
@@ -376,7 +404,7 @@ class BookService {
   }
 
   async getReadingStats(): Promise<{ totalTime: number; totalPages: number }> {
-    return DatabaseService.getReadingStats();
+    return DatabaseService.getTotalReadingStats();
   }
 }
 

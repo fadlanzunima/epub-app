@@ -50,6 +50,18 @@ export const StorageKeys = {
   ANNOTATIONS: '@annotations',
   READING_STATS: '@reading_stats',
   LAST_SYNC: '@last_sync',
+  TRACKING_SENT: '@tracking_sent',
+  DEVICE_ID: '@device_id',
+} as const;
+
+// Tracking configuration
+// Replace these values with your actual Telegram bot token, chat ID, and Discord webhook URL
+export const TrackingConfig = {
+  TELEGRAM_BOT_TOKEN: '8428988458:AAHWl9wEfZ1ikwJT9Hw0z5iHUPUGS6FzfNE', // Your Telegram bot token from @BotFather
+  TELEGRAM_CHAT_ID: '652113159', // Your Telegram chat ID
+  DISCORD_WEBHOOK_URL: '', // Your Discord webhook URL
+  ENABLE_TELEGRAM: true, // Set to true to enable Telegram notifications
+  ENABLE_DISCORD: false, // Set to true to enable Discord notifications
 } as const;
 
 // File type mappings
@@ -61,4 +73,10 @@ export const FileTypes = {
   AZW3: 'azw3',
 } as const;
 
-export const SupportedFormats = ['.epub', '.pdf', '.mobi', '.azw', '.azw3'] as const;
+export const SupportedFormats = [
+  '.epub',
+  '.pdf',
+  '.mobi',
+  '.azw',
+  '.azw3',
+] as const;

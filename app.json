@@ -5,14 +5,36 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "icon": "./assets/images/icon.png",
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#4A90D9"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ereaderapp"
     },
     "android": {
-      "package": "com.ereaderapp"
+      "package": "com.ereaderapp",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#4A90D9"
+      }
     },
-    "plugins": ["expo-sqlite"]
+    "web": {
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-sqlite"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "acb2a77d-98b2-4a80-9c02-ec636b59d41a"
+      }
+    }
   }
 }

@@ -59,6 +59,7 @@ const defaultReaderSettings: ReaderSettings = {
   marginVertical: 20,
   theme: 'light',
   brightness: 1,
+  showPageNumbers: true,
 };
 
 export const useStore = create<AppState>(set => ({

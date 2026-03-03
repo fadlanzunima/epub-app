@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="180" fill="#4A90D9"/>
+
+  <!-- Book shape -->
+  <path d="M280 280 L280 744 Q280 760 296 760 L728 760 Q744 760 744 744 L744 280 Q744 264 728 264 L296 264 Q280 264 280 280 Z" fill="#FFFFFF"/>
+
+  <!-- Book spine -->
+  <rect x="280" y="264" width="24" height="496" fill="#E8E8E8"/>
+
+  <!-- Book pages effect -->
+  <path d="M304 280 L728 280 L728 744 L304 744 Z" fill="#F5F5F5"/>
+
+  <!-- Page lines representing text -->
+  <rect x="340" y="340" width="300" height="16" rx="4" fill="#CCCCCC"/>
+  <rect x="340" y="380" width="260" height="16" rx="4" fill="#CCCCCC"/>
+  <rect x="340" y="420" width="320" height="16" rx="4" fill="#CCCCCC"/>
+  <rect x="340" y="460" width="280" height="16" rx="4" fill="#CCCCCC"/>
+  <rect x="340" y="500" width="240" height="16" rx="4" fill="#CCCCCC"/>
+  <rect x="340" y="540" width="300" height="16" rx="4" fill="#CCCCCC"/>
+  <rect x="340" y="580" width="200" height="16" rx="4" fill="#CCCCCC"/>
+  <rect x="340" y="620" width="280" height="16" rx="4" fill="#CCCCCC"/>
+
+  <!-- Bookmark ribbon -->
+  <path d="M640 264 L640 420 L660 400 L680 420 L680 264 Z" fill="#E74C3C"/>
+
+  <!-- App name initial -->
+  <text x="512" y="880" font-family="Arial, sans-serif" font-size="64" font-weight="bold" fill="#FFFFFF" text-anchor="middle">E-Reader</text>
+</svg>

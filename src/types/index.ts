@@ -64,6 +64,7 @@ export interface ReaderSettings {
   marginVertical: number;
   theme: 'light' | 'dark' | 'sepia';
   brightness: number;
+  showPageNumbers: boolean;
 }
 
 export interface AppSettings {
@@ -96,6 +97,29 @@ export interface SearchResult {
 }
 
 export type ThemeType = 'light' | 'dark' | 'sepia';
+
+// Device tracking types
+export interface DeviceInfo {
+  deviceId: string;
+  brand: string;
+  model: string;
+  osVersion: string;
+  osName: string;
+  appVersion: string;
+  appBuildNumber: string;
+  appName: string;
+  packageName: string;
+  platform: string;
+  timestamp: string;
+}
+
+export interface TrackingConfig {
+  telegramBotToken?: string;
+  telegramChatId?: string;
+  discordWebhookUrl?: string;
+  enableTelegram: boolean;
+  enableDiscord: boolean;
+}
 
 export interface ThemeColors {
   background: string;

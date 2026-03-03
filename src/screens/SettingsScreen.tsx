@@ -116,7 +116,14 @@ export default function SettingsScreen() {
         <List.Item
           title="Show Page Numbers"
           left={props => <List.Icon {...props} icon="numeric" />}
-          right={() => <Switch value={true} />}
+          right={() => (
+            <Switch
+              value={settings.showPageNumbers !== false}
+              onValueChange={value =>
+                updateSettings({ showPageNumbers: value })
+              }
+            />
+          )}
         />
       </List.Section>
 

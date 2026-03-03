@@ -1,4 +1,4 @@
-import { openDatabaseSync, type SQLiteDatabase } from 'expo-sqlite';
+import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
 import {
   Book,
   Category,
@@ -8,13 +8,27 @@ import {
 } from '../types';
 
 const DATABASE_NAME = 'EReader.db';
+const MAX_RETRY_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 500;
 
 class DatabaseService {
   private db: SQLiteDatabase | null = null;
   private isInitializing = false;
   private initPromise: Promise<void> | null = null;
+  private initError: Error | null = null;
 
   async init(): Promise<void> {
+    // If already initialized successfully, return immediately
+    if (this.db !== null) {
+      return;
+    }
+
+    // If there was a previous error, clear it and try again
+    if (this.initError !== null) {
+      console.log('DatabaseService: Retrying after previous error...');
+      this.initError = null;
+    }
+
     // Prevent multiple simultaneous initializations
     if (this.isInitializing && this.initPromise) {
       console.log('DatabaseService: Waiting for existing initialization...');
@@ -22,25 +36,53 @@ class DatabaseService {
     }
 
     this.isInitializing = true;
-    this.initPromise = this.doInit();
+    this.initPromise = this.doInitWithRetry();
     return this.initPromise;
+  }
+
+  private async doInitWithRetry(attempt: number = 1): Promise<void> {
+    try {
+      await this.doInit();
+      this.initError = null;
+    } catch (error) {
+      this.initError =
+        error instanceof Error ? error : new Error('Unknown error');
+      if (attempt < MAX_RETRY_ATTEMPTS) {
+        console.log(
+          `DatabaseService: Retrying initialization (attempt ${
+            attempt + 1
+          }/${MAX_RETRY_ATTEMPTS})...`,
+        );
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+        return this.doInitWithRetry(attempt + 1);
+      }
+      throw error;
+    } finally {
+      this.isInitializing = false;
+    }
   }
 
   private async doInit(): Promise<void> {
     try {
       console.log('DatabaseService: Opening database...', DATABASE_NAME);
-      // Use synchronous API for better compatibility with expo-sqlite 16.x
-      this.db = openDatabaseSync(DATABASE_NAME);
+      // Use async API for better reliability on Android
+      this.db = await openDatabaseAsync(DATABASE_NAME);
       console.log('DatabaseService: Database opened successfully');
+
+      // Add a small delay to ensure database is ready on Android
+      await new Promise(resolve => setTimeout(resolve, 100));
+
       await this.createTables();
       console.log('DatabaseService: Tables created successfully');
     } catch (error) {
       console.error('DatabaseService: Failed to initialize database:', error);
       this.db = null;
       throw error;
-    } finally {
-      this.isInitializing = false;
     }
+  }
+
+  isInitialized(): boolean {
+    return this.db !== null;
   }
 
   private async createTables(): Promise<void> {
@@ -50,9 +92,8 @@ class DatabaseService {
     }
 
     console.log('DatabaseService: Creating tables...');
-    try {
-      await this.db.execAsync(`
-      CREATE TABLE IF NOT EXISTS books (
+    const tables = [
+      `CREATE TABLE IF NOT EXISTS books (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
         author TEXT NOT NULL,
@@ -67,24 +108,21 @@ class DatabaseService {
         currentCfi TEXT,
         readingTime INTEGER DEFAULT 0,
         isFavorite INTEGER DEFAULT 0
-      );
-
-      CREATE TABLE IF NOT EXISTS categories (
+      )`,
+      `CREATE TABLE IF NOT EXISTS categories (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         color TEXT NOT NULL,
         sortOrder INTEGER DEFAULT 0
-      );
-
-      CREATE TABLE IF NOT EXISTS book_categories (
+      )`,
+      `CREATE TABLE IF NOT EXISTS book_categories (
         bookId TEXT NOT NULL,
         categoryId TEXT NOT NULL,
         PRIMARY KEY (bookId, categoryId),
         FOREIGN KEY (bookId) REFERENCES books(id) ON DELETE CASCADE,
         FOREIGN KEY (categoryId) REFERENCES categories(id) ON DELETE CASCADE
-      );
-
-      CREATE TABLE IF NOT EXISTS bookmarks (
+      )`,
+      `CREATE TABLE IF NOT EXISTS bookmarks (
         id TEXT PRIMARY KEY,
         bookId TEXT NOT NULL,
         cfi TEXT,
@@ -92,9 +130,8 @@ class DatabaseService {
         createdAt INTEGER NOT NULL,
         note TEXT,
         FOREIGN KEY (bookId) REFERENCES books(id) ON DELETE CASCADE
-      );
-
-      CREATE TABLE IF NOT EXISTS annotations (
+      )`,
+      `CREATE TABLE IF NOT EXISTS annotations (
         id TEXT PRIMARY KEY,
         bookId TEXT NOT NULL,
         cfi TEXT NOT NULL,
@@ -103,17 +140,26 @@ class DatabaseService {
         color TEXT NOT NULL,
         createdAt INTEGER NOT NULL,
         FOREIGN KEY (bookId) REFERENCES books(id) ON DELETE CASCADE
-      );
-
-      CREATE TABLE IF NOT EXISTS reading_progress (
+      )`,
+      `CREATE TABLE IF NOT EXISTS reading_progress (
         id TEXT PRIMARY KEY,
         bookId TEXT NOT NULL,
         date INTEGER NOT NULL,
         pagesRead INTEGER DEFAULT 0,
         timeSpent INTEGER DEFAULT 0,
         FOREIGN KEY (bookId) REFERENCES books(id) ON DELETE CASCADE
-      );
-    `);
+      )`,
+    ];
+
+    try {
+      for (const sql of tables) {
+        try {
+          await this.db.execAsync(sql);
+        } catch (tableError) {
+          console.error('DatabaseService: Failed to create table:', tableError);
+          // Continue with other tables even if one fails
+        }
+      }
       console.log('DatabaseService: Tables created successfully');
     } catch (error) {
       console.error('DatabaseService: Failed to create tables:', error);
@@ -284,6 +330,18 @@ class DatabaseService {
       [categoryId],
     );
     return rows.map(this.rowToBook);
+  }
+
+  async getCategoriesByBook(bookId: string): Promise<Category[]> {
+    if (!this.db) return [];
+    const rows = await this.db.getAllAsync<any>(
+      `SELECT c.* FROM categories c
+       INNER JOIN book_categories bc ON c.id = bc.categoryId
+       WHERE bc.bookId = ?
+       ORDER BY c.name`,
+      [bookId],
+    );
+    return rows;
   }
 
   // Bookmarks

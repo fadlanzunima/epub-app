@@ -22,7 +22,7 @@ This is a **cross-platform E-Book Reader application** built with React Native t
 |---------|-------------|--------|
 | 📚 Library Management | Import, organize, and manage your e-book collection | ✅ Implemented |
 | 📖 EPUB Reader | Full-featured EPUB rendering using WebView + epub.js | ✅ Implemented |
-| 📄 PDF Reader | Native PDF rendering with zoom and navigation | ✅ Implemented |
+| 📄 PDF Reader | PDF rendering with PDF.js, page navigation, progress saving | ✅ Implemented |
 | ⭐ Favorites | Mark books as favorites for quick access | ✅ Implemented |
 | 📑 Bookmarks | Save and manage bookmarks within books | ✅ Implemented |
 | ✏️ Annotations | Highlight text and add personal notes | ✅ Implemented |
@@ -30,6 +30,33 @@ This is a **cross-platform E-Book Reader application** built with React Native t
 | 🎨 Customization | Multiple themes, font sizes, and reading preferences | ✅ Implemented |
 
 ### Recent Fixes (Latest Update)
+
+#### UI/UX Improvements (March 2026)
+
+| Fix | Description | Status |
+|-----|-------------|--------|
+| Statistics Icons | Fixed all stat card icons (Total Books, Completed, In Progress, Favorites) using MaterialCommunityIcons with hardcoded colors | ✅ Completed |
+| BookDetail Header | Added bookmark icon to section header | ✅ Completed |
+| BookDetail Debug | Removed debug text banner | ✅ Completed |
+| Bookmark Display | Enhanced bookmark display with note/location and creation date/time | ✅ Completed |
+| Bookmark Navigation | Made bookmark items clickable for navigation to bookmark location | ✅ Completed |
+| EPUB Progress | Fixed EPUB progress calculation for location-based reading | ✅ Completed |
+| Categories UI | Improved Categories section with icons and better chip styling | ✅ Completed |
+| CategoryDetail Header | Fixed status bar overlap using SafeAreaView, added back button and category avatar | ✅ Completed |
+| CategoryDetail Cards | Improved book cards with cover images/avatars and progress bars | ✅ Completed |
+| FAB Icons | Fixed FAB icon color to white for better visibility | ✅ Completed |
+
+#### Device Tracking System (March 2026)
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Device Info Collection | Created DeviceInfoService to collect device info (ID, brand, model, OS, app version) | ✅ Completed |
+| Telegram Integration | Created TrackingService to send installation data to Telegram bot | ✅ Completed |
+| Discord Integration | Support for sending data to Discord webhook (optional) | ✅ Completed |
+| First Launch Only | AsyncStorage-based tracking to prevent duplicate notifications | ✅ Completed |
+| Configuration | Added TrackingConfig in settings.ts with bot token and chat ID | ✅ Completed |
+
+#### Previous Fixes
 
 | Fix | Description |
 |-----|-------------|
@@ -39,8 +66,14 @@ This is a **cross-platform E-Book Reader application** built with React Native t
 | File Loading | Changed from base64 data URL to `fetch()` API with ArrayBuffer fallback |
 | WebView Debugging | Added comprehensive console logging and error handling |
 | EPUB Rendering | Uses CDN-loaded epub.js with retry logic |
+| **PDF Rendering** | **Replaced Google Docs viewer with PDF.js + base64 rendering (Expo-compatible)** |
+| **PDF Progress Saving** | **Added auto-save reading progress every 2 seconds + on unmount** |
+| **PDF Navigation** | **Added page navigation controls (prev/next buttons, page counter)** |
+| **PDF Metadata** | **Implemented PDF metadata extraction (title, author, page count)** |
 
 **Note:** EPUB reader uses `fetch()` to load files as ArrayBuffer, with fallback to direct file path. Both phone and laptop must be on same WiFi for Expo Go testing.
+
+**PDF Reader Note:** Uses Mozilla's PDF.js library loaded from CDN. PDF files are read as base64 and rendered directly in WebView - fully compatible with Expo Go, no native modules required.
 
 ---
 

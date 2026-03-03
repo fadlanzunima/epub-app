@@ -12,7 +12,8 @@ import StatsScreen from '../screens/StatsScreen';
 import BookDetailScreen from '../screens/BookDetailScreen';
 import EpubReaderScreen from '../screens/EpubReaderScreen';
 import PdfReaderScreen from '../screens/PdfReaderScreen';
-import { Book } from '../types';
+import CategoryDetailScreen from '../screens/CategoryDetailScreen';
+import { Book, Category } from '../types';
 
 export type RootStackParamList = {
   MainTabs: undefined;
@@ -20,6 +21,7 @@ export type RootStackParamList = {
   BookDetail: { book: Book };
   EpubReader: { book: Book };
   PdfReader: { book: Book };
+  CategoryDetail: { category: Category };
 };
 
 export type MainTabParamList = {
@@ -113,6 +115,11 @@ export default function AppNavigator() {
         <Stack.Screen
           name="PdfReader"
           component={PdfReaderScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="CategoryDetail"
+          component={CategoryDetailScreen}
           options={{ headerShown: false }}
         />
       </Stack.Navigator>

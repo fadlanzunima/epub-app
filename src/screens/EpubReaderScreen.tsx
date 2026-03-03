@@ -699,6 +699,7 @@ export default function EpubReaderScreen() {
           position: relative;
           z-index: 1;
           background-color: ${currentTheme.background};
+          padding-top: 100px; /* Add padding for header */
         }
         #viewer iframe {
           overflow-y: auto !important;
@@ -1661,7 +1662,9 @@ export default function EpubReaderScreen() {
             ]}
           >
             <IconButton icon="chevron-left" size={32} onPress={goPrev} />
-            <Text style={styles.progress}>{Math.round(progress * 100)}%</Text>
+            {readerSettings.showPageNumbers !== false && (
+              <Text style={styles.progress}>{Math.round(progress * 100)}%</Text>
+            )}
             <IconButton icon="chevron-right" size={32} onPress={goNext} />
           </View>
         </Animated.View>
