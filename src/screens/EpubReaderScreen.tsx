@@ -30,7 +30,7 @@ import { RootStackParamList } from '../navigation/AppNavigator';
 import { useStore } from '../hooks/useStore';
 import BookService from '../services/BookService';
 import SettingsService from '../services/SettingsService';
-import { TocItem, Themes, ThemeType, Bookmark } from '../types';
+import { TocItem, Themes, ThemeType, Bookmark, Book } from '../types';
 
 type RoutePropType = RouteProp<RootStackParamList, 'EpubReader'>;
 
@@ -67,10 +67,12 @@ export default function EpubReaderScreen() {
   const route = useRoute<RoutePropType>();
   const navigation = useNavigation();
   const theme = useTheme();
-  const { book } = route.params;
+  const { bookId, initialLocation } = route.params;
   const { readerSettings, updateReaderSetting } = useStore();
   const webviewRef = useRef<WebView>(null);
 
+  const [book, setBook] = useState<Book | null>(null);
+  const [bookLoading, setBookLoading] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [menuVisible, setMenuVisible] = useState(false);
   const [tocVisible, setTocVisible] = useState(false);
@@ -86,7 +88,8 @@ export default function EpubReaderScreen() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [toc, setToc] = useState<TocItem[]>([]);
-  const [currentLocation, setCurrentLocation] = useState(book.currentCfi || '');
+  const [currentLocation, setCurrentLocation] = useState('');
+  const [currentSection, setCurrentSection] = useState('');
   const [progress, setProgress] = useState(0);
   const [loading, setLoading] = useState(true);
   const [webviewLoading, setWebviewLoading] = useState(true);
@@ -96,9 +99,32 @@ export default function EpubReaderScreen() {
   const [jszipSource, setJszipSource] = useState<string>('');
   const [epubSource, setEpubSource] = useState<string>('');
   const [librariesLoaded, setLibrariesLoaded] = useState(false);
+  const [settingsVisible, setSettingsVisible] = useState(false);
   const [epubData, setEpubData] = useState<string>('');
   const [epubLoaded, setEpubLoaded] = useState(false);
   const fadeAnim = useRef(new Animated.Value(1)).current;
+
+  // Load book data
+  useEffect(() => {
+    const loadBook = async () => {
+      try {
+        const loadedBook = await BookService.getBookById(bookId);
+        if (loadedBook) {
+          setBook(loadedBook);
+          setCurrentLocation(initialLocation || loadedBook.currentCfi || '');
+        } else {
+          console.error('EpubReader: Book not found');
+          navigation.goBack();
+        }
+      } catch (err) {
+        console.error('EpubReader: Error loading book:', err);
+        navigation.goBack();
+      } finally {
+        setBookLoading(false);
+      }
+    };
+    loadBook();
+  }, [bookId, navigation, initialLocation]);
 
   const currentTheme = Themes[readerSettings.theme];
 
@@ -135,11 +161,16 @@ export default function EpubReaderScreen() {
               // Apply line height
               doc.body.style.lineHeight = '${settings.lineHeight}';
 
-              // Apply margins (padding on body)
-              doc.body.style.paddingLeft = '${settings.marginHorizontal}px';
-              doc.body.style.paddingRight = '${settings.marginHorizontal}px';
-              doc.body.style.paddingTop = '${settings.marginVertical}px';
-              doc.body.style.paddingBottom = '${settings.marginVertical}px';
+              // Apply margins using a persistent style element
+              var marginStyleId = 'epub-margin-style';
+              var existingMarginStyle = doc.getElementById(marginStyleId);
+              if (existingMarginStyle) {
+                existingMarginStyle.remove();
+              }
+              var marginStyle = doc.createElement('style');
+              marginStyle.id = marginStyleId;
+              marginStyle.textContent = 'body, html { padding-left: ' + settings.marginHorizontal + 'px !important; padding-right: ' + settings.marginHorizontal + 'px !important; padding-top: ' + settings.marginVertical + 'px !important; padding-bottom: ' + settings.marginVertical + 'px !important; box-sizing: border-box !important; }';
+              doc.head.appendChild(marginStyle);
 
               // Apply theme colors
               doc.body.style.backgroundColor = '${theme.background}';
@@ -221,12 +252,13 @@ export default function EpubReaderScreen() {
   }, []);
 
   useEffect(() => {
+    if (!book) return;
     console.log('EPUB file path:', book.filePath);
 
     // Read EPUB file as base64
     async function loadEpubFile() {
       try {
-        const base64Data = await FileSystem.readAsStringAsync(book.filePath, {
+        const base64Data = await FileSystem.readAsStringAsync(book!.filePath, {
           encoding: FileSystem.EncodingType.Base64,
         });
         setEpubData(base64Data);
@@ -249,7 +281,7 @@ export default function EpubReaderScreen() {
       console.log('Set webviewLoading to false');
     }, 3000);
     return () => clearTimeout(timer);
-  }, [book.filePath]);
+  }, [book]);
 
   // Consider WebView loaded when progress > 50%
   const handleLoadProgress = (progress: number) => {
@@ -295,6 +327,7 @@ export default function EpubReaderScreen() {
   };
 
   const handleWebViewMessage = (event: any) => {
+    if (!book) return;
     try {
       const data = JSON.parse(event.nativeEvent.data);
       switch (data.type) {
@@ -312,6 +345,9 @@ export default function EpubReaderScreen() {
           break;
         case 'rendered':
           console.log('WebView rendered section:', data.section);
+          if (data.section) {
+            setCurrentSection(data.section);
+          }
           break;
         case 'click':
           // Toggle controls when user taps in WebView
@@ -466,6 +502,7 @@ export default function EpubReaderScreen() {
   };
 
   const addBookmark = () => {
+    if (!book) return;
     console.log(
       'Opening bookmark dialog for book:',
       book.id,
@@ -484,7 +521,7 @@ export default function EpubReaderScreen() {
   };
 
   const saveBookmark = async () => {
-    if (!currentLocation) return;
+    if (!currentLocation || !book) return;
 
     try {
       await BookService.addBookmark(
@@ -506,6 +543,7 @@ export default function EpubReaderScreen() {
   };
 
   const loadBookmarks = async () => {
+    if (!book) return;
     try {
       const bookBookmarks = await BookService.getBookmarks(book.id);
       console.log('Loaded bookmarks:', bookBookmarks.length);
@@ -866,12 +904,13 @@ export default function EpubReaderScreen() {
               width: "100%",
               height: "100%",
               spread: "none",
-              flow: "scrolled-doc"
+              flow: "scrolled-doc",
+              manager: "default"
             });
             console.log('EPUB Reader: Rendition created');
 
             // Check if we have a current location to display
-            var currentCfi = '${book.currentCfi || ''}';
+            var currentCfi = '${book?.currentCfi || ''}';
             console.log('EPUB Reader: Displaying at CFI:', currentCfi || 'start');
 
             window.rendition.display(currentCfi || undefined).then(function() {
@@ -880,6 +919,25 @@ export default function EpubReaderScreen() {
               var viewer = document.getElementById("viewer");
               console.log('EPUB Reader: Viewer children count:', viewer.children.length);
               console.log('EPUB Reader: Viewer innerHTML length:', viewer.innerHTML.length);
+
+              // Apply reader settings after display
+              setTimeout(function() {
+                if (window.readerSettings) {
+                  var rs = window.readerSettings;
+                  var iframes = document.querySelectorAll('iframe');
+                  iframes.forEach(function(iframe) {
+                    try {
+                      var doc = iframe.contentDocument || iframe.contentWindow.document;
+                      if (doc && doc.body) {
+                        doc.body.style.paddingLeft = rs.marginHorizontal + 'px';
+                        doc.body.style.paddingRight = rs.marginHorizontal + 'px';
+                        doc.body.style.paddingTop = rs.marginVertical + 'px';
+                        doc.body.style.paddingBottom = rs.marginVertical + 'px';
+                      }
+                    } catch(e) {}
+                  });
+                }
+              }, 100);
             }).catch(function(err) {
               console.error('EPUB Reader: Display failed:', err);
               showError('Failed to display book: ' + (err.message || err));
@@ -986,11 +1044,16 @@ export default function EpubReaderScreen() {
                       // Apply line height
                       iframeDoc.body.style.lineHeight = rs.lineHeight;
 
-                      // Apply margins
-                      iframeDoc.body.style.paddingLeft = rs.marginHorizontal + 'px';
-                      iframeDoc.body.style.paddingRight = rs.marginHorizontal + 'px';
-                      iframeDoc.body.style.paddingTop = rs.marginVertical + 'px';
-                      iframeDoc.body.style.paddingBottom = rs.marginVertical + 'px';
+                      // Apply margins using style element for persistence
+                      var marginStyleId = 'epub-margin-style';
+                      var existingMarginStyle = iframeDoc.getElementById(marginStyleId);
+                      if (existingMarginStyle) {
+                        existingMarginStyle.remove();
+                      }
+                      var marginStyle = iframeDoc.createElement('style');
+                      marginStyle.id = marginStyleId;
+                      marginStyle.textContent = 'body, html { padding-left: ' + rs.marginHorizontal + 'px !important; padding-right: ' + rs.marginHorizontal + 'px !important; padding-top: ' + rs.marginVertical + 'px !important; padding-bottom: ' + rs.marginVertical + 'px !important; box-sizing: border-box !important; }';
+                      iframeDoc.head.appendChild(marginStyle);
 
                       console.log('EPUB Reader: Settings applied - fontSize:', rs.fontSize, 'lineHeight:', rs.lineHeight);
                     }
@@ -1282,6 +1345,24 @@ export default function EpubReaderScreen() {
   // DEBUG: Always show WebView
   // if (loading || webviewLoading) { ... }
 
+  // Show loading state while book is being loaded
+  if (bookLoading || !book) {
+    return (
+      <View
+        style={[
+          styles.container,
+          {
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: currentTheme.background,
+          },
+        ]}
+      >
+        <Text style={{ color: currentTheme.text }}>Loading book...</Text>
+      </View>
+    );
+  }
+
   if (error) {
     return (
       <View
@@ -1313,35 +1394,64 @@ export default function EpubReaderScreen() {
 
   // Recursive function to render TOC items with proper nesting
   const renderTocItems = (items: TocItem[], level: number) => {
-    return items.map((item, index) => (
-      <View key={`${level}-${index}`}>
-        <Pressable
-          onPress={() => {
-            console.log('TOC item PRESSED:', item.label, 'href:', item.href);
-            goToLocation(item.href);
-            setTocVisible(false);
-          }}
-          style={({ pressed }) => [
-            styles.tocItem,
-            { paddingLeft: 16 + level * 20 },
-            pressed && { backgroundColor: theme.colors.primary + '20' },
-          ]}
-          android_ripple={{ color: theme.colors.primary + '20' }}
-        >
-          <View style={styles.tocItemContent}>
-            <Text
-              style={[styles.tocItemText, { color: theme.colors.onSurface }]}
-              numberOfLines={2}
-            >
-              {item.label}
-            </Text>
-          </View>
-        </Pressable>
-        {item.subitems &&
-          item.subitems.length > 0 &&
-          renderTocItems(item.subitems, level + 1)}
-      </View>
-    ));
+    return items.map((item, index) => {
+      // Check if this item is the current active chapter
+      const isActive =
+        currentSection &&
+        item.href &&
+        (currentSection === item.href ||
+          currentSection.endsWith(item.href) ||
+          item.href.endsWith(currentSection) ||
+          currentSection.includes(item.href.split('#')[0]) ||
+          item.href.includes(currentSection.split('#')[0]));
+
+      return (
+        <View key={`${level}-${index}`}>
+          <Pressable
+            onPress={() => {
+              console.log('TOC item PRESSED:', item.label, 'href:', item.href);
+              goToLocation(item.href);
+              setTocVisible(false);
+            }}
+            style={({ pressed }) => [
+              styles.tocItem,
+              { paddingLeft: 16 + level * 20 },
+              isActive && { backgroundColor: theme.colors.primary + '20' },
+              pressed && { backgroundColor: theme.colors.primary + '30' },
+            ]}
+            android_ripple={{ color: theme.colors.primary + '20' }}
+          >
+            <View style={styles.tocItemContent}>
+              <Text
+                style={[
+                  styles.tocItemText,
+                  {
+                    color: isActive
+                      ? theme.colors.primary
+                      : theme.colors.onSurface,
+                  },
+                  isActive && { fontWeight: '600' },
+                ]}
+                numberOfLines={2}
+              >
+                {item.label}
+              </Text>
+              {isActive && (
+                <View
+                  style={[
+                    styles.activeIndicator,
+                    { backgroundColor: theme.colors.primary },
+                  ]}
+                />
+              )}
+            </View>
+          </Pressable>
+          {item.subitems &&
+            item.subitems.length > 0 &&
+            renderTocItems(item.subitems, level + 1)}
+        </View>
+      );
+    });
   };
 
   return (
@@ -1488,6 +1598,14 @@ export default function EpubReaderScreen() {
                   }}
                   title="Table of Contents"
                   leadingIcon="table-of-contents"
+                />
+                <Menu.Item
+                  onPress={() => {
+                    setMenuVisible(false);
+                    setSettingsVisible(true);
+                  }}
+                  title="Reader Settings"
+                  leadingIcon="cog"
                 />
                 <Divider />
                 <Menu.Item
@@ -1662,9 +1780,39 @@ export default function EpubReaderScreen() {
             ]}
           >
             <IconButton icon="chevron-left" size={32} onPress={goPrev} />
-            {readerSettings.showPageNumbers !== false && (
-              <Text style={styles.progress}>{Math.round(progress * 100)}%</Text>
-            )}
+            <View style={styles.progressContainer}>
+              {readerSettings.showPageNumbers !== false && (
+                <Text
+                  style={[
+                    styles.progress,
+                    {
+                      color:
+                        readerSettings.progressBarColor || theme.colors.primary,
+                    },
+                  ]}
+                >
+                  {Math.round(progress * 100)}%
+                </Text>
+              )}
+              {/* Progress Bar */}
+              <View
+                style={[
+                  styles.progressBarBackground,
+                  { backgroundColor: theme.colors.surfaceVariant },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.progressBarFill,
+                    {
+                      width: `${progress * 100}%`,
+                      backgroundColor:
+                        readerSettings.progressBarColor || theme.colors.primary,
+                    },
+                  ]}
+                />
+              </View>
+            </View>
             <IconButton icon="chevron-right" size={32} onPress={goNext} />
           </View>
         </Animated.View>
@@ -1912,6 +2060,659 @@ export default function EpubReaderScreen() {
         </Modal>
       </Portal>
 
+      {/* Reader Settings Modal */}
+      <Portal>
+        <Modal
+          visible={settingsVisible}
+          onDismiss={() => setSettingsVisible(false)}
+          dismissable
+          dismissableBackButton
+          contentContainerStyle={[
+            styles.settingsModal,
+            { backgroundColor: theme.colors.surface },
+          ]}
+        >
+          {/* Header */}
+          <View style={styles.settingsHeader}>
+            <IconButton icon="cog" size={28} iconColor={theme.colors.primary} />
+            <Text variant="titleLarge" style={styles.settingsTitle}>
+              Reader Settings
+            </Text>
+            <IconButton
+              icon="close"
+              size={24}
+              onPress={() => setSettingsVisible(false)}
+            />
+          </View>
+          <Divider style={{ marginBottom: 16 }} />
+
+          {/* Live Preview */}
+          <View
+            style={[
+              styles.previewCard,
+              {
+                backgroundColor:
+                  readerSettings.theme === 'dark'
+                    ? '#121212'
+                    : readerSettings.theme === 'sepia'
+                    ? '#F4ECD8'
+                    : '#FFFFFF',
+                marginHorizontal: 4,
+                marginBottom: 16,
+              },
+            ]}
+          >
+            <Text
+              style={{
+                fontSize: readerSettings.fontSize,
+                lineHeight: readerSettings.fontSize * readerSettings.lineHeight,
+                color:
+                  readerSettings.theme === 'dark'
+                    ? '#FFFFFF'
+                    : readerSettings.theme === 'sepia'
+                    ? '#5B4636'
+                    : '#000000',
+                textAlign: 'center',
+              }}
+              numberOfLines={2}
+            >
+              The quick brown fox jumps over the lazy dog
+            </Text>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {/* Quick Presets */}
+            <View style={styles.presetsContainer}>
+              <Text
+                variant="bodyMedium"
+                style={{ opacity: 0.7, marginBottom: 8 }}
+              >
+                Quick Presets
+              </Text>
+              <View style={styles.presetsRow}>
+                {[
+                  {
+                    name: 'Compact',
+                    fontSize: 14,
+                    lineHeight: 1.2,
+                    margin: 10,
+                    labelSize: 10,
+                  },
+                  {
+                    name: 'Default',
+                    fontSize: 16,
+                    lineHeight: 1.5,
+                    margin: 20,
+                    labelSize: 14,
+                  },
+                  {
+                    name: 'Comfortable',
+                    fontSize: 18,
+                    lineHeight: 1.8,
+                    margin: 30,
+                    labelSize: 18,
+                  },
+                ].map(preset => (
+                  <Pressable
+                    key={preset.name}
+                    onPress={() => {
+                      updateReaderSetting('fontSize', preset.fontSize);
+                      updateReaderSetting('lineHeight', preset.lineHeight);
+                      updateReaderSetting('marginHorizontal', preset.margin);
+                      updateReaderSetting('marginVertical', preset.margin);
+                    }}
+                  >
+                    {({ pressed }) => (
+                      <View
+                        style={[
+                          styles.presetButton,
+                          {
+                            backgroundColor: theme.colors.primary,
+                            borderColor: pressed
+                              ? '#FFFFFF'
+                              : theme.colors.primary,
+                            borderWidth: pressed ? 2 : 0,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={{
+                            color: '#FFFFFF',
+                            fontSize: preset.labelSize,
+                            fontWeight: '700',
+                          }}
+                        >
+                          Aa
+                        </Text>
+                        <Text
+                          variant="bodySmall"
+                          style={{
+                            color: '#FFFFFF',
+                            fontWeight: '600',
+                            marginTop: 4,
+                          }}
+                        >
+                          {preset.name}
+                        </Text>
+                      </View>
+                    )}
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+            {/* Typography Section */}
+            <View
+              style={[
+                styles.settingsCard,
+                { backgroundColor: theme.colors.elevation.level1 },
+              ]}
+            >
+              <View style={styles.settingsCardHeader}>
+                <IconButton
+                  icon="format-size"
+                  size={24}
+                  iconColor={theme.colors.primary}
+                />
+                <Text variant="titleMedium" style={styles.settingsCardTitle}>
+                  Typography
+                </Text>
+              </View>
+
+              {/* Font Size with Preview */}
+              <View style={styles.sliderSetting}>
+                <View style={styles.sliderHeader}>
+                  <Text variant="bodyMedium" style={styles.sliderLabel}>
+                    Font Size
+                  </Text>
+                  <View style={styles.sliderValue}>
+                    <Text
+                      variant="titleSmall"
+                      style={{ color: theme.colors.primary }}
+                    >
+                      {readerSettings.fontSize}px
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.sliderControl}>
+                  <Text style={[styles.sliderPreview, { fontSize: 12 }]}>
+                    A
+                  </Text>
+                  <View style={styles.sliderTrack}>
+                    <Pressable
+                      style={[
+                        styles.sliderButton,
+                        { backgroundColor: theme.colors.primary },
+                      ]}
+                      onPress={() =>
+                        updateReaderSetting(
+                          'fontSize',
+                          Math.max(12, readerSettings.fontSize - 2),
+                        )
+                      }
+                    >
+                      <Text
+                        style={[styles.sliderButtonText, { color: '#FFFFFF' }]}
+                      >
+                        −
+                      </Text>
+                    </Pressable>
+                    <View
+                      style={[
+                        styles.sliderProgress,
+                        { backgroundColor: theme.colors.primary + '40' },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.sliderFill,
+                          {
+                            backgroundColor: theme.colors.primary,
+                            width: `${
+                              ((readerSettings.fontSize - 12) / (32 - 12)) * 100
+                            }%`,
+                          },
+                        ]}
+                      />
+                    </View>
+                    <Pressable
+                      style={[
+                        styles.sliderButton,
+                        { backgroundColor: theme.colors.primary },
+                      ]}
+                      onPress={() =>
+                        updateReaderSetting(
+                          'fontSize',
+                          Math.min(32, readerSettings.fontSize + 2),
+                        )
+                      }
+                    >
+                      <Text
+                        style={[styles.sliderButtonText, { color: '#FFFFFF' }]}
+                      >
+                        +
+                      </Text>
+                    </Pressable>
+                  </View>
+                  <Text style={[styles.sliderPreview, { fontSize: 20 }]}>
+                    A
+                  </Text>
+                </View>
+              </View>
+
+              {/* Line Height */}
+              <View style={styles.sliderSetting}>
+                <View style={styles.sliderHeader}>
+                  <Text variant="bodyMedium" style={styles.sliderLabel}>
+                    Line Spacing
+                  </Text>
+                  <Text
+                    variant="titleSmall"
+                    style={{ color: theme.colors.primary }}
+                  >
+                    {readerSettings.lineHeight}x
+                  </Text>
+                </View>
+                <View style={styles.sliderControl}>
+                  <View style={styles.lineHeightPreview}>
+                    <View
+                      style={[
+                        styles.linePreview,
+                        { height: 2, marginBottom: 3 },
+                      ]}
+                    />
+                    <View
+                      style={[
+                        styles.linePreview,
+                        { height: 2, marginBottom: 3 },
+                      ]}
+                    />
+                  </View>
+                  <View style={styles.sliderTrack}>
+                    <Pressable
+                      style={[
+                        styles.sliderButton,
+                        { backgroundColor: theme.colors.primary },
+                      ]}
+                      onPress={() =>
+                        updateReaderSetting(
+                          'lineHeight',
+                          Math.max(
+                            1,
+                            parseFloat(
+                              (readerSettings.lineHeight - 0.2).toFixed(1),
+                            ),
+                          ),
+                        )
+                      }
+                    >
+                      <Text
+                        style={[styles.sliderButtonText, { color: '#FFFFFF' }]}
+                      >
+                        −
+                      </Text>
+                    </Pressable>
+                    <View
+                      style={[
+                        styles.sliderProgress,
+                        { backgroundColor: theme.colors.primary + '40' },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.sliderFill,
+                          {
+                            backgroundColor: theme.colors.primary,
+                            width: `${
+                              ((readerSettings.lineHeight - 1) / (3 - 1)) * 100
+                            }%`,
+                          },
+                        ]}
+                      />
+                    </View>
+                    <Pressable
+                      style={[
+                        styles.sliderButton,
+                        { backgroundColor: theme.colors.primary },
+                      ]}
+                      onPress={() =>
+                        updateReaderSetting(
+                          'lineHeight',
+                          Math.min(
+                            3,
+                            parseFloat(
+                              (readerSettings.lineHeight + 0.2).toFixed(1),
+                            ),
+                          ),
+                        )
+                      }
+                    >
+                      <Text
+                        style={[styles.sliderButtonText, { color: '#FFFFFF' }]}
+                      >
+                        +
+                      </Text>
+                    </Pressable>
+                  </View>
+                  <View style={[styles.lineHeightPreview, { gap: 6 }]}>
+                    <View style={[styles.linePreview, { height: 2 }]} />
+                    <View style={[styles.linePreview, { height: 2 }]} />
+                  </View>
+                </View>
+              </View>
+            </View>
+
+            {/* Layout Section */}
+            <View
+              style={[
+                styles.settingsCard,
+                { backgroundColor: theme.colors.elevation.level1 },
+              ]}
+            >
+              <View style={styles.settingsCardHeader}>
+                <IconButton
+                  icon="page-layout-body"
+                  size={24}
+                  iconColor={theme.colors.primary}
+                />
+                <Text variant="titleMedium" style={styles.settingsCardTitle}>
+                  Layout
+                </Text>
+              </View>
+
+              {/* Margins */}
+              <View style={styles.sliderSetting}>
+                <View style={styles.sliderHeader}>
+                  <Text variant="bodyMedium" style={styles.sliderLabel}>
+                    Page Margins
+                  </Text>
+                  <Text
+                    variant="titleSmall"
+                    style={{ color: theme.colors.primary }}
+                  >
+                    {readerSettings.marginHorizontal}px
+                  </Text>
+                </View>
+                <View style={styles.marginPreviewContainer}>
+                  <View
+                    style={[
+                      styles.marginPreview,
+                      {
+                        marginHorizontal: readerSettings.marginHorizontal * 0.5,
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.marginContent,
+                        { backgroundColor: theme.colors.primary + '30' },
+                      ]}
+                    />
+                  </View>
+                </View>
+                <View style={styles.sliderTrack}>
+                  <Pressable
+                    style={[
+                      styles.sliderButton,
+                      { backgroundColor: theme.colors.primary },
+                    ]}
+                    onPress={() => {
+                      const newMargin = Math.max(
+                        0,
+                        readerSettings.marginHorizontal - 10,
+                      );
+                      updateReaderSetting('marginHorizontal', newMargin);
+                      updateReaderSetting('marginVertical', newMargin);
+                    }}
+                  >
+                    <Text
+                      style={[styles.sliderButtonText, { color: '#FFFFFF' }]}
+                    >
+                      −
+                    </Text>
+                  </Pressable>
+                  <View
+                    style={[
+                      styles.sliderProgress,
+                      { backgroundColor: theme.colors.primary + '40' },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.sliderFill,
+                        {
+                          backgroundColor: theme.colors.primary,
+                          width: `${
+                            (readerSettings.marginHorizontal / 60) * 100
+                          }%`,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <Pressable
+                    style={[
+                      styles.sliderButton,
+                      { backgroundColor: theme.colors.primary },
+                    ]}
+                    onPress={() => {
+                      const newMargin = Math.min(
+                        60,
+                        readerSettings.marginHorizontal + 10,
+                      );
+                      updateReaderSetting('marginHorizontal', newMargin);
+                      updateReaderSetting('marginVertical', newMargin);
+                    }}
+                  >
+                    <Text
+                      style={[styles.sliderButtonText, { color: '#FFFFFF' }]}
+                    >
+                      +
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+
+            {/* Theme Section */}
+            <View
+              style={[
+                styles.settingsCard,
+                { backgroundColor: theme.colors.elevation.level1 },
+              ]}
+            >
+              <View style={styles.settingsCardHeader}>
+                <IconButton
+                  icon="palette"
+                  size={24}
+                  iconColor={theme.colors.primary}
+                />
+                <Text variant="titleMedium" style={styles.settingsCardTitle}>
+                  Theme
+                </Text>
+              </View>
+
+              <View style={styles.themePreviews}>
+                {[
+                  {
+                    name: 'light',
+                    bg: '#FFFFFF',
+                    text: '#000000',
+                    border: '#E0E0E0',
+                    label: 'Light',
+                  },
+                  {
+                    name: 'dark',
+                    bg: '#121212',
+                    text: '#FFFFFF',
+                    border: '#333333',
+                    label: 'Dark',
+                  },
+                  {
+                    name: 'sepia',
+                    bg: '#F4ECD8',
+                    text: '#5B4636',
+                    border: '#D4C5B0',
+                    label: 'Sepia',
+                  },
+                ].map(t => (
+                  <Pressable
+                    key={t.name}
+                    onPress={() =>
+                      updateReaderSetting(
+                        'theme',
+                        t.name as 'light' | 'dark' | 'sepia',
+                      )
+                    }
+                    style={({ pressed }) => [
+                      styles.themeCard,
+                      {
+                        backgroundColor: t.bg,
+                        borderColor:
+                          readerSettings.theme === t.name
+                            ? theme.colors.primary
+                            : t.border,
+                      },
+                      pressed && { opacity: 0.8 },
+                    ]}
+                  >
+                    <View style={styles.themePreviewContent}>
+                      <View style={styles.themePreview}>
+                        <View
+                          style={[
+                            styles.themePreviewLine,
+                            { backgroundColor: t.text, width: '60%' },
+                          ]}
+                        />
+                        <View
+                          style={[
+                            styles.themePreviewLine,
+                            { backgroundColor: t.text, width: '80%' },
+                          ]}
+                        />
+                        <View
+                          style={[
+                            styles.themePreviewLine,
+                            { backgroundColor: t.text, width: '70%' },
+                          ]}
+                        />
+                      </View>
+                      <Text style={[styles.themeLabel, { color: t.text }]}>
+                        {t.label}
+                      </Text>
+                    </View>
+                    {readerSettings.theme === t.name && (
+                      <View
+                        style={[
+                          styles.themeCheckmark,
+                          { backgroundColor: readerSettings.progressBarColor },
+                        ]}
+                      >
+                        <IconButton
+                          icon="check"
+                          size={16}
+                          iconColor="#FFFFFF"
+                        />
+                      </View>
+                    )}
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            {/* Progress Color Section */}
+            <View
+              style={[
+                styles.settingsCard,
+                { backgroundColor: theme.colors.elevation.level1 },
+              ]}
+            >
+              <View style={styles.settingsCardHeader}>
+                <IconButton
+                  icon="progress-check"
+                  size={24}
+                  iconColor={theme.colors.primary}
+                />
+                <Text variant="titleMedium" style={styles.settingsCardTitle}>
+                  Progress Color
+                </Text>
+              </View>
+
+              <View style={styles.colorButtons}>
+                {[
+                  { color: '#6750A4', name: 'Purple' },
+                  { color: '#FF0266', name: 'Pink' },
+                  { color: '#03DAC6', name: 'Teal' },
+                  { color: '#4CAF50', name: 'Green' },
+                  { color: '#2196F3', name: 'Blue' },
+                  { color: '#FF9800', name: 'Orange' },
+                ].map(c => (
+                  <Pressable
+                    key={c.color}
+                    onPress={() =>
+                      updateReaderSetting('progressBarColor', c.color)
+                    }
+                    style={({ pressed }) => [
+                      styles.colorButtonCard,
+                      {
+                        backgroundColor: c.color + '20',
+                        borderColor:
+                          readerSettings.progressBarColor === c.color
+                            ? c.color
+                            : 'transparent',
+                      },
+                      pressed && { opacity: 0.7 },
+                    ]}
+                  >
+                    <View
+                      style={[styles.colorCircle, { backgroundColor: c.color }]}
+                    />
+                    {readerSettings.progressBarColor === c.color && (
+                      <View
+                        style={[
+                          styles.colorSelectedIndicator,
+                          { backgroundColor: c.color },
+                        ]}
+                      >
+                        <IconButton
+                          icon="check"
+                          size={14}
+                          iconColor="#FFFFFF"
+                        />
+                      </View>
+                    )}
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            {/* Footer Actions */}
+            <View style={styles.settingsFooter}>
+              <Button
+                mode="outlined"
+                onPress={() => {
+                  updateReaderSetting('fontSize', 16);
+                  updateReaderSetting('lineHeight', 1.5);
+                  updateReaderSetting('marginHorizontal', 20);
+                  updateReaderSetting('marginVertical', 20);
+                  updateReaderSetting('theme', 'light');
+                  updateReaderSetting('progressBarColor', '#6750A4');
+                }}
+                style={styles.resetButton}
+                icon="restore"
+              >
+                Reset Default
+              </Button>
+              <Button
+                mode="contained"
+                onPress={() => setSettingsVisible(false)}
+                style={styles.doneButton}
+              >
+                Done
+              </Button>
+            </View>
+          </ScrollView>
+        </Modal>
+      </Portal>
+
       {/* Toast Notification */}
       <Snackbar
         visible={toastVisible}
@@ -2008,6 +2809,24 @@ const styles = StyleSheet.create({
   progress: {
     fontSize: 14,
   },
+  progressContainer: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 8,
+  },
+  progressBarBackground: {
+    width: '100%',
+    height: 4,
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginTop: 4,
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
   tocModal: {
     margin: 20,
     padding: 20,
@@ -2037,6 +2856,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  activeIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginLeft: 8,
   },
   bookmarkRow: {
     flexDirection: 'row',
@@ -2145,5 +2970,243 @@ const styles = StyleSheet.create({
   searchNoResultsText: {
     fontSize: 14,
     marginTop: 8,
+  },
+  settingsModal: {
+    margin: 20,
+    padding: 20,
+    borderRadius: 12,
+    maxHeight: '80%',
+  },
+  settingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  settingControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  settingValue: {
+    fontSize: 14,
+    minWidth: 50,
+    textAlign: 'center',
+  },
+  settingsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  settingsTitle: {
+    fontWeight: '600',
+  },
+  settingsCard: {
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+  },
+  settingsCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  settingsCardTitle: {
+    fontWeight: '600',
+    marginLeft: -8,
+  },
+  sliderSetting: {
+    marginBottom: 20,
+  },
+  sliderHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sliderLabel: {
+    opacity: 0.8,
+  },
+  sliderValue: {
+    backgroundColor: 'rgba(103, 80, 164, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  sliderControl: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  sliderPreview: {
+    fontWeight: '600',
+    opacity: 0.6,
+  },
+  sliderTrack: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sliderButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sliderButtonText: {
+    fontSize: 20,
+    fontWeight: '600',
+    lineHeight: 22,
+  },
+  sliderProgress: {
+    flex: 1,
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  sliderFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  lineHeightPreview: {
+    width: 20,
+    justifyContent: 'center',
+  },
+  linePreview: {
+    backgroundColor: '#666',
+    borderRadius: 1,
+    opacity: 0.5,
+  },
+  marginPreviewContainer: {
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  marginPreview: {
+    width: '80%',
+    height: 40,
+    borderWidth: 1,
+    borderColor: 'rgba(103, 80, 164, 0.3)',
+    borderRadius: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  marginContent: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 2,
+  },
+  themeSection: {
+    marginVertical: 8,
+  },
+  themePreviews: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  themeCard: {
+    flex: 1,
+    height: 100,
+    borderRadius: 12,
+    borderWidth: 2,
+    padding: 10,
+    position: 'relative',
+  },
+  themePreviewContent: {
+    flex: 1,
+  },
+  themePreview: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: 4,
+  },
+  themePreviewLine: {
+    height: 3,
+    borderRadius: 1.5,
+    opacity: 0.6,
+  },
+  themeLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  themeCheckmark: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    borderRadius: 12,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+  },
+  colorButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  colorButtonCard: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  colorCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  colorSelectedIndicator: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    borderRadius: 10,
+  },
+  previewCard: {
+    borderRadius: 12,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  presetsContainer: {
+    marginHorizontal: 4,
+    marginBottom: 16,
+  },
+  presetsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  presetButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    borderWidth: 1.5,
+  },
+  settingsFooter: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  resetButton: {
+    flex: 1,
+  },
+  doneButton: {
+    flex: 1,
   },
 });

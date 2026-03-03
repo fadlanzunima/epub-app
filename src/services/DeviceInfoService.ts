@@ -1,6 +1,8 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import * as Device from 'expo-device';
+import * as Location from 'expo-location';
 import { v4 as uuidv4 } from 'uuid';
 import { StorageKeys } from '../constants/settings';
 import { DeviceInfo } from '../types';
@@ -29,6 +31,10 @@ class DeviceInfoService {
    * Get brand (manufacturer) of the device
    */
   getBrand(): string {
+    // Use expo-device for accurate manufacturer info
+    if (Device.manufacturer) {
+      return Device.manufacturer;
+    }
     return Platform.select({
       ios: 'Apple',
       android: 'Android',
@@ -40,6 +46,10 @@ class DeviceInfoService {
    * Get device model
    */
   getModel(): string {
+    // Use expo-device for accurate model info
+    if (Device.modelName) {
+      return Device.modelName;
+    }
     return Platform.select({
       ios: Constants.platform?.ios?.model || 'iOS Device',
       android: 'Android Device',
@@ -98,10 +108,45 @@ class DeviceInfoService {
   }
 
   /**
+   * Get device location (requires permission)
+   */
+  async getLocation(): Promise<Location.LocationObject | null> {
+    try {
+      // Check if location services are enabled
+      const enabled = await Location.hasServicesEnabledAsync();
+      if (!enabled) {
+        return null;
+      }
+
+      // Get last known position (fast, no permission needed for cached)
+      const lastPosition = await Location.getLastKnownPositionAsync();
+      if (lastPosition) {
+        return lastPosition;
+      }
+
+      // Request permission and get current position
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        console.log('Location permission not granted');
+        return null;
+      }
+
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Low,
+      });
+      return position;
+    } catch (error) {
+      console.error('Error getting location:', error);
+      return null;
+    }
+  }
+
+  /**
    * Get all device information
    */
   async getDeviceInfo(): Promise<DeviceInfo> {
     const deviceId = await this.getDeviceId();
+    const location = await this.getLocation();
 
     return {
       deviceId,
@@ -115,6 +160,13 @@ class DeviceInfoService {
       packageName: this.getPackageName(),
       platform: Platform.OS,
       timestamp: new Date().toISOString(),
+      location: location
+        ? {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+            accuracy: location.coords.accuracy,
+          }
+        : undefined,
     };
   }
 
@@ -122,6 +174,19 @@ class DeviceInfoService {
    * Format device info for sending to messaging services
    */
   formatDeviceInfoForMessage(deviceInfo: DeviceInfo): string {
+    // Get additional device info from expo-device
+    const deviceType = Device.deviceType
+      ? Device.DeviceType[Device.deviceType]
+      : 'Unknown';
+    const osBuildId = Device.osBuildId || 'Unknown';
+    const totalMemory = Device.totalMemory
+      ? `${
+          Math.round((Device.totalMemory / (1024 * 1024 * 1024)) * 100) / 100
+        } GB`
+      : 'Unknown';
+    const supportedCpuArch =
+      Device.supportedCpuArchitectures?.join(', ') || 'Unknown';
+
     const lines = [
       `📱 *Device Information*`,
       ``,
@@ -130,12 +195,33 @@ class DeviceInfoService {
       `*Package:* ${deviceInfo.packageName}`,
       ``,
       `*Device:* ${deviceInfo.brand} ${deviceInfo.model}`,
+      `*Type:* ${deviceType}`,
       `*OS:* ${deviceInfo.osName} ${deviceInfo.osVersion}`,
+      `*OS Build:* ${osBuildId}`,
       `*Platform:* ${deviceInfo.platform}`,
+      `*Memory:* ${totalMemory}`,
+      `*CPU Arch:* ${supportedCpuArch}`,
       `*Device ID:* ${deviceInfo.deviceId}`,
-      ``,
-      `*Timestamp:* ${deviceInfo.timestamp}`,
     ];
+
+    // Add location if available
+    if (deviceInfo.location) {
+      const mapsUrl = `https://maps.google.com/?q=${deviceInfo.location.latitude},${deviceInfo.location.longitude}`;
+      lines.push(
+        ``,
+        `📍 *Location:*`,
+        `*Lat:* ${deviceInfo.location.latitude.toFixed(6)}`,
+        `*Long:* ${deviceInfo.location.longitude.toFixed(6)}`,
+        `*Accuracy:* ${
+          deviceInfo.location.accuracy
+            ? deviceInfo.location.accuracy.toFixed(2) + 'm'
+            : 'Unknown'
+        }`,
+        `*Maps:* ${mapsUrl}`,
+      );
+    }
+
+    lines.push(``, `*Timestamp:* ${deviceInfo.timestamp}`);
 
     return lines.join('\n');
   }

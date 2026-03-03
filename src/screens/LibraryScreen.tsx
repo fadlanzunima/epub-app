@@ -247,27 +247,13 @@ export default function LibraryScreen() {
     }
   };
 
-  // Helper to serialize book for navigation (Date -> string)
-  const serializeBook = (book: Book): Book => ({
-    ...book,
-    addedAt:
-      book.addedAt instanceof Date
-        ? (book.addedAt.toISOString() as unknown as Date)
-        : book.addedAt,
-    lastReadAt:
-      book.lastReadAt instanceof Date
-        ? (book.lastReadAt.toISOString() as unknown as Date)
-        : book.lastReadAt,
-  });
-
   const handleBookPress = (book: Book) => {
-    const serializedBook = serializeBook(book);
     if (book.fileType === 'epub') {
-      navigation.navigate('EpubReader', { book: serializedBook });
+      navigation.navigate('EpubReader', { bookId: book.id });
     } else if (book.fileType === 'pdf') {
-      navigation.navigate('PdfReader', { book: serializedBook });
+      navigation.navigate('PdfReader', { bookId: book.id });
     } else {
-      navigation.navigate('BookDetail', { book: serializedBook });
+      navigation.navigate('BookDetail', { bookId: book.id });
     }
   };
 

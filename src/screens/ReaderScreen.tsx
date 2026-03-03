@@ -4,7 +4,8 @@ import { Text, Appbar, useTheme } from 'react-native-paper';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { useReader } from '../hooks/useReader';
-import { Book } from '../database/models/Book';
+import BookService from '../services/BookService';
+import { Book } from '../types';
 
 type ReaderScreenRouteProp = RouteProp<RootStackParamList, 'Reader'>;
 
@@ -17,25 +18,34 @@ const ReaderScreen: React.FC = () => {
   const theme = useTheme();
   const navigation = useNavigation();
   const route = useRoute<ReaderScreenRouteProp>();
-  const { book } = route.params;
+  const { bookId } = route.params;
 
+  const [book, setBook] = useState<Book | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { state, loadBook } = useReader();
 
   useEffect(() => {
     initializeReader();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const initializeReader = async () => {
     try {
       setIsLoading(true);
-      await loadBook(book.id);
+      const loadedBook = await BookService.getBookById(bookId);
+      if (loadedBook) {
+        setBook(loadedBook);
+        await loadBook(loadedBook.id);
 
-      // Route to format-specific reader
-      if (book.fileType === 'epub') {
-        navigation.navigate('EpubReader', { book } as any);
-      } else if (book.fileType === 'pdf') {
-        navigation.navigate('PdfReader', { book } as any);
+        // Route to format-specific reader
+        if (loadedBook.fileType === 'epub') {
+          navigation.navigate('EpubReader', { bookId: loadedBook.id });
+        } else if (loadedBook.fileType === 'pdf') {
+          navigation.navigate('PdfReader', { bookId: loadedBook.id });
+        }
+      } else {
+        console.error('ReaderScreen: Book not found');
+        navigation.goBack();
       }
     } catch (error) {
       console.error('Failed to initialize reader:', error);
@@ -68,6 +78,17 @@ const ReaderScreen: React.FC = () => {
 
   // This screen typically redirects to format-specific readers
   // But can also provide a unified interface
+  if (!book) {
+    return (
+      <View
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+      >
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <Text style={styles.loadingText}>Loading book...</Text>
+      </View>
+    );
+  }
+
   return (
     <View
       style={[styles.container, { backgroundColor: theme.colors.background }]}

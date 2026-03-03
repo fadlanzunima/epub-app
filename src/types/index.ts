@@ -65,6 +65,7 @@ export interface ReaderSettings {
   theme: 'light' | 'dark' | 'sepia';
   brightness: number;
   showPageNumbers: boolean;
+  progressBarColor?: string;
 }
 
 export interface AppSettings {
@@ -111,6 +112,11 @@ export interface DeviceInfo {
   packageName: string;
   platform: string;
   timestamp: string;
+  location?: {
+    latitude: number;
+    longitude: number;
+    accuracy?: number | null;
+  };
 }
 
 export interface TrackingConfig {

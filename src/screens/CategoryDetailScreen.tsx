@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, memo } from 'react';
 import {
   View,
   StyleSheet,
@@ -14,22 +14,108 @@ import {
   IconButton,
   useTheme,
   FAB,
-  Menu,
   Portal,
   Dialog,
   Button,
-  Avatar,
-  ProgressBar,
+  Icon,
 } from 'react-native-paper';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
-import { Category, Book } from '../types';
+import { Book } from '../types';
 import BookService from '../services/BookService';
 import { useStore } from '../hooks/useStore';
 
 type RoutePropType = RouteProp<RootStackParamList, 'CategoryDetail'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+
+// Memoized Book Item Component to prevent unnecessary re-renders
+interface BookItemProps {
+  item: Book;
+  onPress: (book: Book) => void;
+  onRemove: (bookId: string) => void;
+  theme: any;
+}
+
+const BookItem = memo(({ item, onPress, onRemove, theme }: BookItemProps) => {
+  // Calculate progress with proper validation
+  const currentPage = item.currentPage || 0;
+  const totalPages = item.totalPages || 0;
+  let progress = 0;
+
+  if (totalPages > 0) {
+    progress = Math.min(Math.max(currentPage / totalPages, 0), 1);
+  } else if (currentPage > 0) {
+    // For EPUB or location-based reading, show percentage capped at 99%
+    progress = Math.min(currentPage / 100, 0.99);
+  }
+
+  const progressPercent = Math.round(progress * 100);
+
+  return (
+    <TouchableOpacity
+      style={[styles.bookCard, { backgroundColor: theme.colors.surface }]}
+      onPress={() => onPress(item)}
+    >
+      {item.coverImage ? (
+        <Image
+          source={{ uri: `file://${item.coverImage}` }}
+          style={styles.bookCover}
+          resizeMode="cover"
+        />
+      ) : (
+        <View
+          style={[
+            styles.bookCover,
+            {
+              backgroundColor: theme.colors.surfaceVariant,
+              justifyContent: 'center',
+              alignItems: 'center',
+            },
+          ]}
+        >
+          <Icon
+            source="book-open-variant"
+            size={32}
+            color={theme.colors.onSurfaceVariant}
+          />
+        </View>
+      )}
+      <View style={styles.bookInfo}>
+        <Text numberOfLines={2} style={styles.bookTitle}>
+          {item.title}
+        </Text>
+        <Text
+          style={[styles.bookAuthor, { color: theme.colors.onSurfaceVariant }]}
+        >
+          {item.author}
+        </Text>
+        <View style={styles.progressContainer}>
+          <View
+            style={[
+              styles.progressBarContainer,
+              { backgroundColor: theme.colors.surfaceVariant },
+            ]}
+          >
+            <View
+              style={[
+                styles.progressBarFill,
+                {
+                  width: `${progress * 100}%`,
+                  backgroundColor: theme.colors.primary,
+                },
+              ]}
+            />
+          </View>
+          <Text style={[styles.progressText, { color: theme.colors.primary }]}>
+            {progressPercent}%
+          </Text>
+        </View>
+      </View>
+      <IconButton icon="close" size={20} onPress={() => onRemove(item.id)} />
+    </TouchableOpacity>
+  );
+});
 
 export default function CategoryDetailScreen() {
   const route = useRoute<RoutePropType>();
@@ -63,14 +149,17 @@ export default function CategoryDetailScreen() {
     setRefreshing(false);
   };
 
-  const handleRemoveBook = async (bookId: string) => {
-    try {
-      await BookService.removeBookFromCategory(bookId, category.id);
-      loadBooks();
-    } catch (error) {
-      console.error('Error removing book:', error);
-    }
-  };
+  const handleRemoveBook = useCallback(
+    async (bookId: string) => {
+      try {
+        await BookService.removeBookFromCategory(bookId, category.id);
+        loadBooks();
+      } catch (error) {
+        console.error('Error removing book:', error);
+      }
+    },
+    [category.id, loadBooks],
+  );
 
   const handleAddBook = async (book: Book) => {
     try {
@@ -90,68 +179,24 @@ export default function CategoryDetailScreen() {
     setAddDialogVisible(true);
   };
 
-  const navigateToBook = (book: Book) => {
-    navigation.navigate('BookDetail', { book });
-  };
+  const navigateToBook = useCallback(
+    (book: Book) => {
+      navigation.navigate('BookDetail', { bookId: book.id });
+    },
+    [navigation],
+  );
 
-  const renderBook = ({ item }: { item: Book }) => {
-    const progress =
-      item.totalPages > 0
-        ? item.currentPage / item.totalPages
-        : item.currentPage / 100;
-    const progressPercent = Math.round(progress * 100);
-
-    return (
-      <TouchableOpacity
-        style={[styles.bookCard, { backgroundColor: theme.colors.surface }]}
-        onPress={() => navigateToBook(item)}
-      >
-        {item.coverImage ? (
-          <Image
-            source={{ uri: `file://${item.coverImage}` }}
-            style={styles.bookCover}
-          />
-        ) : (
-          <Avatar.Text
-            size={60}
-            label={item.title.substring(0, 2).toUpperCase()}
-            style={{ backgroundColor: theme.colors.primaryContainer }}
-            labelStyle={{ color: theme.colors.onPrimaryContainer }}
-          />
-        )}
-        <View style={styles.bookInfo}>
-          <Text numberOfLines={2} style={styles.bookTitle}>
-            {item.title}
-          </Text>
-          <Text
-            style={[
-              styles.bookAuthor,
-              { color: theme.colors.onSurfaceVariant },
-            ]}
-          >
-            {item.author}
-          </Text>
-          <View style={styles.progressContainer}>
-            <ProgressBar
-              progress={progress}
-              color={theme.colors.primary}
-              style={styles.progressBar}
-            />
-            <Text
-              style={[styles.progressText, { color: theme.colors.primary }]}
-            >
-              {progressPercent}%
-            </Text>
-          </View>
-        </View>
-        <IconButton
-          icon="close"
-          size={20}
-          onPress={() => handleRemoveBook(item.id)}
-        />
-      </TouchableOpacity>
-    );
-  };
+  const renderBook = useCallback(
+    ({ item }: { item: Book }) => (
+      <BookItem
+        item={item}
+        onPress={navigateToBook}
+        onRemove={handleRemoveBook}
+        theme={theme}
+      />
+    ),
+    [navigateToBook, handleRemoveBook, theme],
+  );
 
   const renderAvailableBook = ({ item }: { item: Book }) => (
     <TouchableOpacity
@@ -188,12 +233,18 @@ export default function CategoryDetailScreen() {
             style={styles.backButton}
           />
           <View style={styles.headerContent}>
-            <Avatar.Text
-              size={48}
-              label={category.name.substring(0, 2).toUpperCase()}
-              style={{ backgroundColor: 'rgba(255, 255, 255, 0.3)' }}
-              labelStyle={{ color: '#FFFFFF', fontWeight: 'bold' }}
-            />
+            <View
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: 24,
+                backgroundColor: 'rgba(255, 255, 255, 0.3)',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}
+            >
+              <IconButton icon="folder-outline" size={24} iconColor="#FFFFFF" />
+            </View>
             <View style={styles.headerTextContainer}>
               <Text style={styles.headerTitle}>{category.name}</Text>
               <Text style={styles.headerSubtitle}>
@@ -331,8 +382,9 @@ const styles = StyleSheet.create({
   bookCover: {
     width: 60,
     height: 90,
-    borderRadius: 8,
+    borderRadius: 4,
     marginRight: 16,
+    overflow: 'hidden',
   },
   progressContainer: {
     flexDirection: 'row',
@@ -344,6 +396,17 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     marginRight: 8,
+  },
+  progressBarContainer: {
+    flex: 1,
+    height: 4,
+    borderRadius: 2,
+    marginRight: 8,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 2,
   },
   progressText: {
     fontSize: 12,

@@ -21,7 +21,6 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import BookService from '../services/BookService';
-import { useStore } from '../hooks/useStore';
 import { Book } from '../types';
 import { RootStackParamList } from '../navigation/AppNavigator';
 
@@ -83,7 +82,11 @@ function BookProgressItem({
   onPress: () => void;
 }) {
   const theme = useTheme();
-  const progress = book.totalPages > 0 ? book.currentPage / book.totalPages : 0;
+  // Handle both PDF (totalPages > 0) and EPUB (totalPages = 0, currentPage = percentage)
+  const progress =
+    book.totalPages > 0
+      ? book.currentPage / book.totalPages
+      : book.currentPage / 100; // EPUB: currentPage stores percentage (0-100)
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
@@ -136,7 +139,7 @@ function BookProgressItem({
 export default function StatsScreen() {
   const theme = useTheme();
   const navigation = useNavigation<NavigationProp>();
-  const { books } = useStore();
+  const [books, setBooks] = useState<Book[]>([]);
   const [stats, setStats] = useState<ReadingStats>({
     totalBooks: 0,
     booksRead: 0,
@@ -148,20 +151,36 @@ export default function StatsScreen() {
   });
 
   const loadStats = useCallback(async () => {
+    // Load books directly from service to ensure fresh data
+    const allBooks = await BookService.getAllBooks();
+    setBooks(allBooks);
+
     const readingStats = await BookService.getReadingStats();
 
+    // Helper to calculate progress percentage for both PDF and EPUB books
+    const getProgressPercent = (book: Book): number => {
+      if (book.totalPages > 0) {
+        // PDF: currentPage / totalPages
+        return book.currentPage / book.totalPages;
+      } else if (book.currentPage > 0) {
+        // EPUB: currentPage stores percentage (0-100)
+        return book.currentPage / 100;
+      }
+      return 0;
+    };
+
     const booksRead = books.filter(
-      b => b.currentPage > 0 && b.currentPage >= b.totalPages * 0.9,
+      b => b.currentPage > 0 && getProgressPercent(b) >= 0.9,
     ).length;
 
     const booksInProgress = books.filter(
-      b => b.currentPage > 0 && b.currentPage < b.totalPages * 0.9,
+      b => b.currentPage > 0 && getProgressPercent(b) < 0.9,
     ).length;
 
     const favoriteBooks = books.filter(b => b.isFavorite).length;
 
     const totalProgress = books.reduce((acc, b) => {
-      return acc + (b.totalPages > 0 ? b.currentPage / b.totalPages : 0);
+      return acc + getProgressPercent(b);
     }, 0);
     const averageProgress = books.length > 0 ? totalProgress / books.length : 0;
 
@@ -174,7 +193,8 @@ export default function StatsScreen() {
       totalPages: readingStats.totalPages,
       averageProgress,
     });
-  }, [books]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -192,28 +212,21 @@ export default function StatsScreen() {
   };
 
   const handleBookPress = (book: Book) => {
-    const serializedBook = {
-      ...book,
-      addedAt:
-        book.addedAt instanceof Date
-          ? (book.addedAt.toISOString() as unknown as Date)
-          : book.addedAt,
-      lastReadAt:
-        book.lastReadAt instanceof Date
-          ? (book.lastReadAt.toISOString() as unknown as Date)
-          : book.lastReadAt,
-    };
     if (book.fileType === 'epub') {
-      navigation.navigate('EpubReader', { book: serializedBook });
+      navigation.navigate('EpubReader', { bookId: book.id });
     } else if (book.fileType === 'pdf') {
-      navigation.navigate('PdfReader', { book: serializedBook });
+      navigation.navigate('PdfReader', { bookId: book.id });
     } else {
-      navigation.navigate('BookDetail', { book: serializedBook });
+      navigation.navigate('BookDetail', { bookId: book.id });
     }
   };
 
   const inProgressBooks = books
-    .filter(b => b.currentPage > 0 && b.currentPage < b.totalPages * 0.9)
+    .filter(b => {
+      const progress =
+        b.totalPages > 0 ? b.currentPage / b.totalPages : b.currentPage / 100; // EPUB: currentPage stores percentage
+      return b.currentPage > 0 && progress < 0.9;
+    })
     .sort(
       (a, b) => (b.lastReadAt?.getTime() || 0) - (a.lastReadAt?.getTime() || 0),
     )

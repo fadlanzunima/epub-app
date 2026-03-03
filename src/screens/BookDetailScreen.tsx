@@ -29,7 +29,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import BookService from '../services/BookService';
 import { useStore } from '../hooks/useStore';
-import { Bookmark, Annotation, Category } from '../types';
+import { Bookmark, Annotation, Category, Book } from '../types';
 
 type RoutePropType = RouteProp<RootStackParamList, 'BookDetail'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -38,21 +38,40 @@ export default function BookDetailScreen() {
   const route = useRoute<RoutePropType>();
   const navigation = useNavigation<NavigationProp>();
   const theme = useTheme();
-  const { book } = route.params;
+  const { bookId } = route.params;
   const { updateBook, deleteBook, categories: allCategories } = useStore();
+  const [book, setBook] = useState<Book | null>(null);
+  const [loading, setLoading] = useState(true);
   const [menuVisible, setMenuVisible] = useState(false);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [bookCategories, setBookCategories] = useState<Category[]>([]);
   const [categoryDialogVisible, setCategoryDialogVisible] = useState(false);
 
+  const loadBook = useCallback(async () => {
+    console.log('BookDetail: Loading book', bookId);
+    try {
+      const loadedBook = await BookService.getBookById(bookId);
+      if (loadedBook) {
+        setBook(loadedBook);
+      } else {
+        console.error('BookDetail: Book not found');
+        navigation.goBack();
+      }
+    } catch (error) {
+      console.error('BookDetail: Error loading book:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [bookId, navigation]);
+
   const loadData = useCallback(async () => {
-    console.log('BookDetail: Loading data for book', book.id);
+    console.log('BookDetail: Loading data for book', bookId);
     try {
       const [bms, anns, cats] = await Promise.all([
-        BookService.getBookmarks(book.id),
-        BookService.getAnnotations(book.id),
-        BookService.getCategoriesByBook(book.id),
+        BookService.getBookmarks(bookId),
+        BookService.getAnnotations(bookId),
+        BookService.getCategoriesByBook(bookId),
       ]);
       console.log(
         'BookDetail: Loaded bookmarks:',
@@ -69,50 +88,82 @@ export default function BookDetailScreen() {
     } catch (error) {
       console.error('BookDetail: Error loading data:', error);
     }
-  }, [book.id]);
+  }, [bookId]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    loadBook();
+  }, [loadBook]);
+
+  useEffect(() => {
+    if (book) {
+      loadData();
+    }
+  }, [book, loadData]);
 
   // Reload data when screen comes into focus (e.g., after reading)
   useFocusEffect(
     useCallback(() => {
-      loadData();
-    }, [loadData]),
+      if (book) {
+        loadData();
+      }
+    }, [book, loadData]),
   );
 
   const handleAddToCategory = async (categoryId: string) => {
+    if (!book) return;
     await BookService.addBookToCategory(book.id, categoryId);
     loadData();
   };
 
   const handleRemoveFromCategory = async (categoryId: string) => {
+    if (!book) return;
     await BookService.removeBookFromCategory(book.id, categoryId);
     loadData();
   };
 
   const handleRead = () => {
+    if (!book) return;
     if (book.fileType === 'epub') {
-      navigation.navigate('EpubReader', { book });
+      navigation.navigate('EpubReader', { bookId: book.id });
     } else if (book.fileType === 'pdf') {
-      navigation.navigate('PdfReader', { book });
+      navigation.navigate('PdfReader', { bookId: book.id });
     }
   };
 
   const handleToggleFavorite = async () => {
+    if (!book) return;
     await BookService.toggleFavorite(book.id);
     const updatedBook = await BookService.getBookById(book.id);
     if (updatedBook) {
+      setBook(updatedBook);
       updateBook(updatedBook);
     }
   };
 
   const handleDelete = async () => {
+    if (!book) return;
     await BookService.deleteBook(book.id);
     deleteBook(book.id);
     navigation.goBack();
   };
+
+  // Show loading state or return null if book is not loaded
+  if (loading || !book) {
+    return (
+      <View
+        style={[
+          styles.container,
+          {
+            backgroundColor: theme.colors.background,
+            justifyContent: 'center',
+            alignItems: 'center',
+          },
+        ]}
+      >
+        <Text>Loading...</Text>
+      </View>
+    );
+  }
 
   const progressPercent =
     book.totalPages > 0
@@ -310,25 +361,14 @@ export default function BookDetailScreen() {
             style={styles.listItem}
             onPress={() => {
               // Navigate to reader with bookmark location
-              const serializedBook = {
-                ...book,
-                addedAt:
-                  book.addedAt instanceof Date
-                    ? (book.addedAt.toISOString() as unknown as Date)
-                    : book.addedAt,
-                lastReadAt:
-                  book.lastReadAt instanceof Date
-                    ? (book.lastReadAt.toISOString() as unknown as Date)
-                    : book.lastReadAt,
-              };
               if (book.fileType === 'epub') {
                 navigation.navigate('EpubReader', {
-                  book: serializedBook,
+                  bookId: book.id,
                   initialLocation: bm.cfi,
                 });
               } else if (book.fileType === 'pdf') {
                 navigation.navigate('PdfReader', {
-                  book: serializedBook,
+                  bookId: book.id,
                   initialPage: bm.page,
                 });
               }

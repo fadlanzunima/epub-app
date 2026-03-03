@@ -25,6 +25,7 @@
     "expo-device": "~7.0.2",
     "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.21",
+    "expo-location": "^55.1.2",
     "expo-sqlite": "~16.0.10",
     "expo-web-browser": "~15.0.10",
     "react": "19.1.0",

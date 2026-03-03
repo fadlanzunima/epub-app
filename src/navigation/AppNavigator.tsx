@@ -13,14 +13,14 @@ import BookDetailScreen from '../screens/BookDetailScreen';
 import EpubReaderScreen from '../screens/EpubReaderScreen';
 import PdfReaderScreen from '../screens/PdfReaderScreen';
 import CategoryDetailScreen from '../screens/CategoryDetailScreen';
-import { Book, Category } from '../types';
+import { Category } from '../types';
 
 export type RootStackParamList = {
   MainTabs: undefined;
-  Reader: { book: Book };
-  BookDetail: { book: Book };
-  EpubReader: { book: Book };
-  PdfReader: { book: Book };
+  Reader: { bookId: string };
+  BookDetail: { bookId: string };
+  EpubReader: { bookId: string; initialLocation?: string };
+  PdfReader: { bookId: string; initialPage?: number };
   CategoryDetail: { category: Category };
 };
 

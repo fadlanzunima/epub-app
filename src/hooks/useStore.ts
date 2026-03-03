@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Book,
   Category,
@@ -62,55 +64,67 @@ const defaultReaderSettings: ReaderSettings = {
   showPageNumbers: true,
 };
 
-export const useStore = create<AppState>(set => ({
-  // Books
-  books: [],
-  setBooks: books => set({ books }),
-  addBook: book => set(state => ({ books: [book, ...state.books] })),
-  updateBook: book =>
-    set(state => ({
-      books: state.books.map(b => (b.id === book.id ? book : b)),
-    })),
-  deleteBook: id =>
-    set(state => ({
-      books: state.books.filter(b => b.id !== id),
-    })),
+export const useStore = create<AppState>()(
+  persist(
+    set => ({
+      // Books
+      books: [],
+      setBooks: books => set({ books }),
+      addBook: book => set(state => ({ books: [book, ...state.books] })),
+      updateBook: book =>
+        set(state => ({
+          books: state.books.map(b => (b.id === book.id ? book : b)),
+        })),
+      deleteBook: id =>
+        set(state => ({
+          books: state.books.filter(b => b.id !== id),
+        })),
 
-  // Categories
-  categories: [],
-  setCategories: categories => set({ categories }),
-  addCategory: category =>
-    set(state => ({
-      categories: [...state.categories, category],
-    })),
+      // Categories
+      categories: [],
+      setCategories: categories => set({ categories }),
+      addCategory: category =>
+        set(state => ({
+          categories: [...state.categories, category],
+        })),
 
-  // Current Book
-  currentBook: null,
-  setCurrentBook: book => set({ currentBook: book }),
+      // Current Book
+      currentBook: null,
+      setCurrentBook: book => set({ currentBook: book }),
 
-  // Reader Settings
-  readerSettings: defaultReaderSettings,
-  setReaderSettings: settings => set({ readerSettings: settings }),
-  updateReaderSetting: (key, value) =>
-    set(state => ({
-      readerSettings: { ...state.readerSettings, [key]: value },
-    })),
+      // Reader Settings
+      readerSettings: defaultReaderSettings,
+      setReaderSettings: settings => set({ readerSettings: settings }),
+      updateReaderSetting: (key, value) =>
+        set(state => ({
+          readerSettings: { ...state.readerSettings, [key]: value },
+        })),
 
-  // Search
-  searchQuery: '',
-  setSearchQuery: query => set({ searchQuery: query }),
-  searchResults: [],
-  setSearchResults: results => set({ searchResults: results }),
+      // Search
+      searchQuery: '',
+      setSearchQuery: query => set({ searchQuery: query }),
+      searchResults: [],
+      setSearchResults: results => set({ searchResults: results }),
 
-  // Statistics
-  statistics: null,
-  setStatistics: stats => set({ statistics: stats }),
+      // Statistics
+      statistics: null,
+      setStatistics: stats => set({ statistics: stats }),
 
-  // Loading
-  isLoading: false,
-  setIsLoading: loading => set({ isLoading: loading }),
+      // Loading
+      isLoading: false,
+      setIsLoading: loading => set({ isLoading: loading }),
 
-  // Theme
-  theme: 'light',
-  setTheme: theme => set({ theme }),
-}));
+      // Theme
+      theme: 'light',
+      setTheme: theme => set({ theme }),
+    }),
+    {
+      name: 'app-storage',
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: state => ({
+        readerSettings: state.readerSettings,
+        theme: state.theme,
+      }),
+    },
+  ),
+);

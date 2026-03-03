@@ -22,6 +22,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { useStore } from '../hooks/useStore';
 import BookService from '../services/BookService';
+import { Book } from '../types';
 
 type RoutePropType = RouteProp<RootStackParamList, 'PdfReader'>;
 
@@ -231,19 +232,44 @@ export default function PdfReaderScreen() {
   const route = useRoute<RoutePropType>();
   const navigation = useNavigation();
   const theme = useTheme();
-  const { book } = route.params;
+  const { bookId, initialPage } = route.params;
   const { readerSettings } = useStore();
   const webViewRef = useRef<WebView>(null);
 
+  const [book, setBook] = useState<Book | null>(null);
+  const [bookLoading, setBookLoading] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [menuVisible, setMenuVisible] = useState(false);
-  const [currentPage, setCurrentPage] = useState(book.currentPage || 1);
-  const [totalPages, setTotalPages] = useState(book.totalPages || 0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [pdfBase64, setPdfBase64] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [webViewReady, setWebViewReady] = useState(false);
   const fadeAnim = useRef(new Animated.Value(1)).current;
+
+  // Load book data
+  useEffect(() => {
+    const loadBook = async () => {
+      try {
+        const loadedBook = await BookService.getBookById(bookId);
+        if (loadedBook) {
+          setBook(loadedBook);
+          setCurrentPage(initialPage || loadedBook.currentPage || 1);
+          setTotalPages(loadedBook.totalPages || 0);
+        } else {
+          console.error('PdfReader: Book not found');
+          navigation.goBack();
+        }
+      } catch (err) {
+        console.error('PdfReader: Error loading book:', err);
+        navigation.goBack();
+      } finally {
+        setBookLoading(false);
+      }
+    };
+    loadBook();
+  }, [bookId, navigation, initialPage]);
 
   // Save progress every 5 seconds or when page changes
   const lastSavedPage = useRef(currentPage);
@@ -253,6 +279,7 @@ export default function PdfReaderScreen() {
 
   // Load PDF file as base64
   useEffect(() => {
+    if (!book) return;
     const loadPdfFile = async () => {
       try {
         console.log('📄 PdfReader: Loading PDF file...', {
@@ -288,10 +315,11 @@ export default function PdfReaderScreen() {
     };
 
     loadPdfFile();
-  }, [book.filePath]);
+  }, [book]);
 
   // Save progress function
   const saveProgress = useCallback(async () => {
+    if (!book) return;
     try {
       if (currentPage !== lastSavedPage.current) {
         await BookService.updateReadingProgress(book.id, currentPage);
@@ -300,7 +328,7 @@ export default function PdfReaderScreen() {
     } catch (err) {
       console.error('Error saving progress:', err);
     }
-  }, [currentPage, book.id]);
+  }, [currentPage, book]);
 
   // Save progress when page changes
   useEffect(() => {
@@ -398,18 +426,20 @@ export default function PdfReaderScreen() {
   }, [fadeAnim]);
 
   const addBookmark = useCallback(async () => {
+    if (!book) return;
     try {
       await BookService.addBookmark(book.id, '', `Page ${currentPage}`);
       setMenuVisible(false);
     } catch (err) {
       console.error('Error adding bookmark:', err);
     }
-  }, [book.id, currentPage]);
+  }, [book, currentPage]);
 
   const openInBrowser = useCallback(async () => {
+    if (!book) return;
     await WebBrowser.openBrowserAsync(book.filePath);
     setMenuVisible(false);
-  }, [book.filePath]);
+  }, [book]);
 
   const goToPreviousPage = useCallback(() => {
     if (currentPage > 1) {
@@ -429,6 +459,19 @@ export default function PdfReaderScreen() {
       : readerSettings.theme === 'sepia'
       ? { background: '#F4ECD8', text: '#5B4636' }
       : { background: '#FFFFFF', text: '#000000' };
+
+  if (bookLoading || !book) {
+    return (
+      <View
+        style={[
+          styles.container,
+          { justifyContent: 'center', alignItems: 'center' },
+        ]}
+      >
+        <Text>Loading book...</Text>
+      </View>
+    );
+  }
 
   if (isLoading) {
     return (
