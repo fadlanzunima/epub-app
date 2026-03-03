@@ -54,7 +54,7 @@ interface AppState {
 }
 
 const defaultReaderSettings: ReaderSettings = {
-  fontSize: 16,
+  fontSize: 12,
   fontFamily: 'system',
   lineHeight: 1.5,
   marginHorizontal: 20,

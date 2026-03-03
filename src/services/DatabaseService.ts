@@ -41,8 +41,21 @@ class DatabaseService {
   }
 
   private async doInitWithRetry(attempt: number = 1): Promise<void> {
+    const INIT_TIMEOUT_MS = 10000; // 10 second timeout
+
     try {
-      await this.doInit();
+      // Add timeout to prevent hanging indefinitely
+      const initWithTimeout = Promise.race([
+        this.doInit(),
+        new Promise<void>((_, reject) =>
+          setTimeout(
+            () => reject(new Error('Database initialization timeout')),
+            INIT_TIMEOUT_MS,
+          ),
+        ),
+      ]);
+
+      await initWithTimeout;
       this.initError = null;
     } catch (error) {
       this.initError =

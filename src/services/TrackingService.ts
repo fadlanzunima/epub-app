@@ -47,6 +47,7 @@ class TrackingService {
       await AsyncStorage.setItem(StorageKeys.TRACKING_SENT, 'true');
     } catch (error) {
       console.error('Error marking tracking as sent:', error);
+      throw new Error('Failed to save tracking status');
     }
   }
 
@@ -58,6 +59,7 @@ class TrackingService {
       await AsyncStorage.removeItem(StorageKeys.TRACKING_SENT);
     } catch (error) {
       console.error('Error resetting tracking status:', error);
+      throw new Error('Failed to reset tracking status');
     }
   }
 

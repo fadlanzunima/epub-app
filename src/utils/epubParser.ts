@@ -24,8 +24,11 @@ export interface EpubTocItem {
  * Extract metadata from EPUB file
  * Note: This is a simplified implementation
  * Full implementation would require extracting and parsing container.xml and OPF files
+ * @deprecated This function returns placeholder data. Use BookService.extractEpubMetadata() for actual implementation.
  */
-export const extractEpubMetadata = async (filePath: string): Promise<EpubMetadata> => {
+export const extractEpubMetadata = async (
+  _filePath: string,
+): Promise<EpubMetadata> => {
   // TODO: Implement actual EPUB parsing
   // 1. Unzip EPUB file
   // 2. Parse META-INF/container.xml to find OPF file
@@ -40,8 +43,11 @@ export const extractEpubMetadata = async (filePath: string): Promise<EpubMetadat
 
 /**
  * Extract table of contents from EPUB
+ * @deprecated This function is not yet implemented. Returns empty array.
  */
-export const extractEpubToc = async (filePath: string): Promise<EpubTocItem[]> => {
+export const extractEpubToc = async (
+  _filePath: string,
+): Promise<EpubTocItem[]> => {
   // TODO: Implement TOC extraction
   // 1. Find and parse NCX or XHTML navigation document
   // 2. Extract hierarchical TOC structure
@@ -51,8 +57,11 @@ export const extractEpubToc = async (filePath: string): Promise<EpubTocItem[]> =
 
 /**
  * Get cover image from EPUB
+ * @deprecated This function is not yet implemented. Returns null.
  */
-export const extractEpubCover = async (filePath: string): Promise<string | null> => {
+export const extractEpubCover = async (
+  _filePath: string,
+): Promise<string | null> => {
   // TODO: Implement cover extraction
   // 1. Parse OPF to find cover item
   // 2. Extract cover image file
@@ -64,7 +73,11 @@ export const extractEpubCover = async (filePath: string): Promise<string | null>
 /**
  * Generate CFI (Canonical Fragment Identifier) for a location
  */
-export const generateCFI = (spineIndex: number, elementIndex?: number, characterOffset?: number): string => {
+export const generateCFI = (
+  spineIndex: number,
+  elementIndex?: number,
+  characterOffset?: number,
+): string => {
   let cfi = `epubcfi(/6/${spineIndex * 2 + 4})`;
   if (elementIndex !== undefined) {
     cfi = `epubcfi(/6/${spineIndex * 2 + 4}[${elementIndex}]`;
@@ -79,7 +92,13 @@ export const generateCFI = (spineIndex: number, elementIndex?: number, character
 /**
  * Parse CFI string into components
  */
-export const parseCFI = (cfi: string): { spineIndex: number; elementIndex?: number; characterOffset?: number } | null => {
+export const parseCFI = (
+  cfi: string,
+): {
+  spineIndex: number;
+  elementIndex?: number;
+  characterOffset?: number;
+} | null => {
   const match = cfi.match(/epubcfi\(\/6\/(\d+)(?:\[(\d+)\])?(?::(\d+))?\)/);
   if (!match) return null;
 
@@ -93,6 +112,7 @@ export const parseCFI = (cfi: string): { spineIndex: number; elementIndex?: numb
 
 /**
  * Check if file is valid EPUB
+ * @deprecated This function only checks file extension. Use proper validation.
  */
 export const isValidEpub = async (filePath: string): Promise<boolean> => {
   // TODO: Implement validation
@@ -102,8 +122,9 @@ export const isValidEpub = async (filePath: string): Promise<boolean> => {
 
 /**
  * Get spine items from EPUB
+ * @deprecated This function is not yet implemented. Returns empty array.
  */
-export const getSpineItems = async (filePath: string): Promise<string[]> => {
+export const getSpineItems = async (_filePath: string): Promise<string[]> => {
   // TODO: Implement spine extraction
   // Returns ordered list of content document paths
   return [];

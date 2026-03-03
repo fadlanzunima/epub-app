@@ -14,6 +14,7 @@ A cross-platform e-reader application built with React Native that supports EPUB
 - 📑 **Bookmarks**: Save and manage bookmarks
 - ✏️ **Annotations**: Highlight text and add notes
 - 📊 **Statistics**: Track reading progress and statistics
+- 🚀 **Onboarding**: Interactive 8-slide tutorial for new users
 
 ### Reader Features
 - 🎨 **Multiple Themes**: Light, Dark, and Sepia themes
@@ -46,15 +47,23 @@ src/
 │   ├── StatsScreen.tsx
 │   ├── BookDetailScreen.tsx
 │   ├── EpubReaderScreen.tsx
-│   └── PdfReaderScreen.tsx
+│   ├── PdfReaderScreen.tsx
+│   └── onboarding/   # Onboarding flow
+│       ├── OnboardingScreen.tsx
+│       └── slides/
 ├── navigation/       # Navigation configuration
 ├── hooks/           # Custom React hooks
 ├── services/        # Business logic
 │   ├── DatabaseService.ts
 │   ├── BookService.ts
-│   └── SettingsService.ts
+│   ├── SettingsService.ts
+│   └── OnboardingService.ts
 ├── types/           # TypeScript type definitions
 └── constants/       # App constants
+    ├── colors.ts
+    ├── fonts.ts
+    ├── settings.ts
+    └── onboarding.ts
 ```
 
 ## Getting Started
@@ -118,6 +127,7 @@ Use Xcode to archive and distribute the app.
 
 ## Roadmap
 
+- [x] Onboarding flow for new users
 - [ ] Cloud sync with Firebase
 - [ ] Full-text search within books
 - [ ] Text-to-speech
@@ -126,6 +136,16 @@ Use Xcode to archive and distribute the app.
 - [ ] More format support (CBZ, CBR)
 - [ ] Custom fonts support
 - [ ] Advanced annotation features
+
+## Documentation
+
+Comprehensive documentation and architecture plans are available in the [`plans/`](plans/) directory:
+
+- [`plans/ARCHITECTURE.md`](plans/ARCHITECTURE.md) - System architecture and data flow
+- [`plans/SYSTEM_DIAGRAM.md`](plans/SYSTEM_DIAGRAM.md) - Visual system diagrams
+- [`plans/ONBOARDING_FLOW.md`](plans/ONBOARDING_FLOW.md) - Onboarding feature design and UX flow
+
+For detailed API documentation and feature guides, see [`DOCUMENTATION.md`](DOCUMENTATION.md).
 
 ## Contributing
 

@@ -55,13 +55,14 @@ export const StorageKeys = {
 } as const;
 
 // Tracking configuration
-// Replace these values with your actual Telegram bot token, chat ID, and Discord webhook URL
+// IMPORTANT: Set these values via environment variables or secure configuration
+// Do NOT commit actual tokens to version control
 export const TrackingConfig = {
-  TELEGRAM_BOT_TOKEN: '8428988458:AAHWl9wEfZ1ikwJT9Hw0z5iHUPUGS6FzfNE', // Your Telegram bot token from @BotFather
-  TELEGRAM_CHAT_ID: '652113159', // Your Telegram chat ID (@fdlnzunima)
-  DISCORD_WEBHOOK_URL: '', // Your Discord webhook URL
-  ENABLE_TELEGRAM: true, // Telegram tracking enabled
-  ENABLE_DISCORD: false, // Set to true to enable Discord notifications
+  TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '', // Set via env var
+  TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID || '', // Set via env var
+  DISCORD_WEBHOOK_URL: process.env.DISCORD_WEBHOOK_URL || '', // Set via env var
+  ENABLE_TELEGRAM: !!process.env.TELEGRAM_BOT_TOKEN, // Auto-enable if token is set
+  ENABLE_DISCORD: !!process.env.DISCORD_WEBHOOK_URL, // Auto-enable if webhook is set
 } as const;
 
 // File type mappings

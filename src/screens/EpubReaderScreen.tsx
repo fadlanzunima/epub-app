@@ -104,6 +104,20 @@ export default function EpubReaderScreen() {
   const [epubLoaded, setEpubLoaded] = useState(false);
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
+  // Progress bar colors
+  const progressColors = [
+    { color: '#6750A4', name: 'Purple' },
+    { color: '#E53935', name: 'Red' },
+    { color: '#1E88E5', name: 'Blue' },
+    { color: '#43A047', name: 'Green' },
+    { color: '#FB8C00', name: 'Orange' },
+    { color: '#8E24AA', name: 'Magenta' },
+    { color: '#00ACC1', name: 'Cyan' },
+    { color: '#FDD835', name: 'Yellow' },
+    { color: '#6D4C41', name: 'Brown' },
+    { color: '#757575', name: 'Gray' },
+  ];
+
   // Load book data
   useEffect(() => {
     const loadBook = async () => {
@@ -420,6 +434,8 @@ export default function EpubReaderScreen() {
       }
     } catch (e) {
       console.error('WebView message error:', e);
+      setToastMessage('Reader communication error. Please try again.');
+      setToastVisible(true);
     }
   };
 
@@ -1477,25 +1493,27 @@ export default function EpubReaderScreen() {
           onMessage={handleWebViewMessage}
           injectedJavaScript={`
             (function() {
-              // Capture console logs and send to React Native
-              const originalLog = console.log;
-              const originalError = console.error;
-              console.log = function(...args) {
-                originalLog.apply(console, args);
-                window.ReactNativeWebView.postMessage(JSON.stringify({
-                  type: 'console',
-                  level: 'log',
-                  message: args.map(a => String(a)).join(' ')
-                }));
-              };
-              console.error = function(...args) {
-                originalError.apply(console, args);
-                window.ReactNativeWebView.postMessage(JSON.stringify({
-                  type: 'console',
-                  level: 'error',
-                  message: args.map(a => String(a)).join(' ')
-                }));
-              };
+              // Capture console logs and send to React Native (dev only)
+              if (typeof __DEV__ !== 'undefined' && __DEV__) {
+                const originalLog = console.log;
+                const originalError = console.error;
+                console.log = function(...args) {
+                  originalLog.apply(console, args);
+                  window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'console',
+                    level: 'log',
+                    message: args.map(a => String(a)).join(' ')
+                  }));
+                };
+                console.error = function(...args) {
+                  originalError.apply(console, args);
+                  window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'console',
+                    level: 'error',
+                    message: args.map(a => String(a)).join(' ')
+                  }));
+                };
+              }
             })();
             document.addEventListener('message', function(e) {
               eval(e.data);
@@ -2419,95 +2437,52 @@ export default function EpubReaderScreen() {
                 </Text>
               </View>
 
-              {/* Margins */}
-              <View style={styles.sliderSetting}>
-                <View style={styles.sliderHeader}>
-                  <Text variant="bodyMedium" style={styles.sliderLabel}>
-                    Page Margins
-                  </Text>
-                  <Text
-                    variant="titleSmall"
-                    style={{ color: theme.colors.primary }}
-                  >
-                    {readerSettings.marginHorizontal}px
-                  </Text>
-                </View>
-                <View style={styles.marginPreviewContainer}>
-                  <View
-                    style={[
-                      styles.marginPreview,
-                      {
-                        marginHorizontal: readerSettings.marginHorizontal * 0.5,
-                      },
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.marginContent,
-                        { backgroundColor: theme.colors.primary + '30' },
-                      ]}
-                    />
-                  </View>
-                </View>
-                <View style={styles.sliderTrack}>
-                  <Pressable
-                    style={[
-                      styles.sliderButton,
-                      { backgroundColor: theme.colors.primary },
-                    ]}
-                    onPress={() => {
-                      const newMargin = Math.max(
-                        0,
-                        readerSettings.marginHorizontal - 10,
-                      );
-                      updateReaderSetting('marginHorizontal', newMargin);
-                      updateReaderSetting('marginVertical', newMargin);
-                    }}
-                  >
-                    <Text
-                      style={[styles.sliderButtonText, { color: '#FFFFFF' }]}
-                    >
-                      −
-                    </Text>
-                  </Pressable>
-                  <View
-                    style={[
-                      styles.sliderProgress,
-                      { backgroundColor: theme.colors.primary + '40' },
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.sliderFill,
+              {/* Progress Bar Color - Moved from settings */}
+              <View style={styles.themeSection}>
+                <Text variant="bodyMedium" style={styles.sliderLabel}>
+                  Progress Bar Color
+                </Text>
+                <View style={styles.themeGrid}>
+                  {progressColors.map(c => (
+                    <Pressable
+                      key={c.color}
+                      onPress={() =>
+                        updateReaderSetting('progressBarColor', c.color)
+                      }
+                      style={({ pressed }) => [
+                        styles.themeButton,
                         {
-                          backgroundColor: theme.colors.primary,
-                          width: `${
-                            (readerSettings.marginHorizontal / 60) * 100
-                          }%`,
+                          backgroundColor: c.color + '20',
+                          borderColor:
+                            readerSettings.progressBarColor === c.color
+                              ? c.color
+                              : 'transparent',
                         },
+                        pressed && { opacity: 0.7 },
                       ]}
-                    />
-                  </View>
-                  <Pressable
-                    style={[
-                      styles.sliderButton,
-                      { backgroundColor: theme.colors.primary },
-                    ]}
-                    onPress={() => {
-                      const newMargin = Math.min(
-                        60,
-                        readerSettings.marginHorizontal + 10,
-                      );
-                      updateReaderSetting('marginHorizontal', newMargin);
-                      updateReaderSetting('marginVertical', newMargin);
-                    }}
-                  >
-                    <Text
-                      style={[styles.sliderButtonText, { color: '#FFFFFF' }]}
                     >
-                      +
-                    </Text>
-                  </Pressable>
+                      <View
+                        style={[
+                          styles.colorCircle,
+                          { backgroundColor: c.color },
+                        ]}
+                      />
+                      {readerSettings.progressBarColor === c.color && (
+                        <View
+                          style={[
+                            styles.themeCheckmark,
+                            { backgroundColor: c.color },
+                          ]}
+                        >
+                          <IconButton
+                            icon="check"
+                            size={12}
+                            iconColor="#FFFFFF"
+                          />
+                        </View>
+                      )}
+                    </Pressable>
+                  ))}
                 </View>
               </View>
             </View>
@@ -3208,5 +3183,20 @@ const styles = StyleSheet.create({
   },
   doneButton: {
     flex: 1,
+  },
+  // Progress bar color styles
+  themeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  themeButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
   },
 });

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { View, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
 import {
   Switch,
   Divider,
@@ -11,6 +11,7 @@ import {
 } from 'react-native-paper';
 
 import SettingsService from '../services/SettingsService';
+import { OnboardingService } from '../services/OnboardingService';
 import { useStore } from '../hooks/useStore';
 import { ReaderSettings } from '../types';
 
@@ -48,15 +49,6 @@ export default function SettingsScreen() {
     { name: 'light', label: 'Light', bg: '#FFFFFF', text: '#000000' },
     { name: 'dark', label: 'Dark', bg: '#121212', text: '#FFFFFF' },
     { name: 'sepia', label: 'Sepia', bg: '#F4ECD8', text: '#5B4636' },
-  ];
-
-  const progressColors = [
-    { color: '#6750A4', name: 'Purple' },
-    { color: '#FF0266', name: 'Pink' },
-    { color: '#03DAC6', name: 'Teal' },
-    { color: '#4CAF50', name: 'Green' },
-    { color: '#2196F3', name: 'Blue' },
-    { color: '#FF9800', name: 'Orange' },
   ];
 
   return (
@@ -123,46 +115,6 @@ export default function SettingsScreen() {
                     ]}
                   >
                     <IconButton icon="check" size={12} iconColor="#FFFFFF" />
-                  </View>
-                )}
-              </Pressable>
-            ))}
-          </View>
-
-          <Divider style={styles.settingDivider} />
-
-          {/* Progress Bar Color */}
-          <Text variant="bodyMedium" style={styles.settingLabel}>
-            Progress Bar Color
-          </Text>
-          <View style={styles.colorContainer}>
-            {progressColors.map(c => (
-              <Pressable
-                key={c.color}
-                onPress={() => updateSettings({ progressBarColor: c.color })}
-                style={({ pressed }) => [
-                  styles.colorButton,
-                  {
-                    backgroundColor: c.color + '20',
-                    borderColor:
-                      settings.progressBarColor === c.color
-                        ? c.color
-                        : 'transparent',
-                  },
-                  pressed && { opacity: 0.7 },
-                ]}
-              >
-                <View
-                  style={[styles.colorCircle, { backgroundColor: c.color }]}
-                />
-                {settings.progressBarColor === c.color && (
-                  <View
-                    style={[
-                      styles.colorCheckmark,
-                      { backgroundColor: c.color },
-                    ]}
-                  >
-                    <IconButton icon="check" size={10} iconColor="#FFFFFF" />
                   </View>
                 )}
               </Pressable>
@@ -250,7 +202,7 @@ export default function SettingsScreen() {
               </Text>
             </View>
             <Text variant="titleMedium" style={styles.settingValue}>
-              {settings.fontSize || 16}px
+              {settings.fontSize || 12}px
             </Text>
           </View>
 
@@ -271,7 +223,7 @@ export default function SettingsScreen() {
         </Card.Content>
       </Card>
 
-      {/* Reset Button */}
+      {/* Reset Buttons */}
       <View style={styles.resetContainer}>
         <Button
           mode="outlined"
@@ -281,6 +233,22 @@ export default function SettingsScreen() {
           textColor={theme.colors.error}
         >
           Reset All Settings
+        </Button>
+        <View style={{ height: 12 }} />
+        <Button
+          mode="outlined"
+          onPress={async () => {
+            await OnboardingService.resetOnboarding();
+            // Show confirmation
+            Alert.alert(
+              'Success',
+              'Tutorial reset. Restart the app to see it again.',
+            );
+          }}
+          style={styles.resetButton}
+          icon="help-circle"
+        >
+          Show Tutorial Again
         </Button>
       </View>
 
@@ -360,31 +328,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3,
-  },
-  colorContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  colorButton: {
-    width: 60,
-    height: 60,
-    borderRadius: 12,
-    borderWidth: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-  },
-  colorCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-  },
-  colorCheckmark: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    borderRadius: 10,
   },
   settingRow: {
     flexDirection: 'row',

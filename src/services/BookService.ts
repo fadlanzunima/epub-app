@@ -1,17 +1,33 @@
-import {
-  Book,
-  BookFormat,
-  Category,
-  Bookmark,
-  Annotation,
-  ReadingProgress,
-} from '../types';
+import { Book, BookFormat, Category, Bookmark, Annotation } from '../types';
 import DatabaseService from './DatabaseService';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 import { v4 as uuidv4 } from 'uuid';
 import JSZip from 'jszip';
 import { extractPdfMetadata } from '../utils/pdfHelpers';
+import {
+  BUNDLE_DEFAULT_BOOKS,
+  DEFAULT_BOOKS_URLS,
+  DEFAULT_BOOKS_ASSETS,
+  DEFAULT_BOOKS_METADATA,
+} from '../config/defaultBooks';
+import { Asset } from 'expo-asset';
+
+// Callback for download progress updates
+export type DownloadProgressCallback = (
+  bookId: string,
+  progress: number, // 0-100
+  bytesDownloaded: number,
+  totalBytes: number,
+) => void;
+
+let downloadProgressCallback: DownloadProgressCallback | null = null;
+
+export function setDownloadProgressCallback(
+  callback: DownloadProgressCallback | null,
+): void {
+  downloadProgressCallback = callback;
+}
 
 const BOOKS_DIR = FileSystem.documentDirectory
   ? `${FileSystem.documentDirectory}books/`
@@ -30,12 +46,292 @@ class BookService {
       if (Platform.OS !== 'web') {
         await this.ensureDirectories();
         console.log('BookService: Directories ensured');
+        // Seed default books on native platforms
+        await this.seedDefaultBooks();
       }
       console.log('BookService: Initialization complete');
     } catch (error) {
       console.error('BookService: Initialization failed:', error);
       throw error;
     }
+  }
+
+  /**
+   * Seed default books on first app launch
+   *
+   * Mode 1 - Bundled (BUNDLE_DEFAULT_BOOKS = true):
+   *   EPUBs are bundled with the app and copied to app storage
+   *   Use this for production builds
+   *
+   * Mode 2 - Download (BUNDLE_DEFAULT_BOOKS = false):
+   *   EPUBs are downloaded from server URLs
+   *   Use this for development or to keep app size small
+   *
+   * Default books get IDs: default-1, default-2, default-3
+   * User books will start appearing after these (conceptually position 4+)
+   */
+  private async seedDefaultBooks(): Promise<void> {
+    try {
+      console.log('[DEBUG] BookService: ====================================');
+      console.log('[DEBUG] BookService: Starting default books setup');
+      console.log(
+        '[DEBUG] BookService: BUNDLE_DEFAULT_BOOKS =',
+        BUNDLE_DEFAULT_BOOKS,
+      );
+      console.log(
+        '[DEBUG] BookService: Mode =',
+        BUNDLE_DEFAULT_BOOKS
+          ? 'BUNDLED (local assets)'
+          : 'DOWNLOAD (GitHub URLs)',
+      );
+      console.log('[DEBUG] BookService: ====================================');
+
+      const existingBooks = await DatabaseService.getBooks();
+      const existingDefaultBooks = existingBooks.filter(book =>
+        book.id.startsWith('default-'),
+      );
+
+      console.log(
+        '[DEBUG] BookService: Found',
+        existingBooks.length,
+        'total books in database',
+      );
+      console.log(
+        '[DEBUG] BookService: Found',
+        existingDefaultBooks.length,
+        'default books already seeded',
+      );
+      console.log(
+        '[DEBUG] BookService: Total default books expected:',
+        DEFAULT_BOOKS_METADATA.length,
+      );
+
+      // If all default books already exist, skip seeding
+      if (existingDefaultBooks.length === DEFAULT_BOOKS_METADATA.length) {
+        console.log(
+          '[DEBUG] BookService: All default books already available - skipping setup',
+        );
+        return;
+      }
+
+      const booksToSetup =
+        DEFAULT_BOOKS_METADATA.length - existingDefaultBooks.length;
+      console.log(
+        '[DEBUG] BookService: Need to setup',
+        booksToSetup,
+        'default books',
+      );
+
+      for (const defaultBook of DEFAULT_BOOKS_METADATA) {
+        console.log(
+          '[DEBUG] BookService: ----------------------------------------',
+        );
+        console.log('[DEBUG] BookService: Processing book:', defaultBook.id);
+        console.log('[DEBUG] BookService: Title:', defaultBook.title);
+        console.log('[DEBUG] BookService: Filename:', defaultBook.fileName);
+
+        // Check if this default book already exists
+        const existingBook = existingBooks.find(
+          book => book.id === defaultBook.id,
+        );
+        if (existingBook) {
+          console.log(
+            '[DEBUG] BookService: Book already exists, skipping:',
+            defaultBook.title,
+          );
+          continue;
+        }
+
+        console.log(
+          '[DEBUG] BookService: Book not found, will download from GitHub',
+        );
+
+        try {
+          const destPath = `${BOOKS_DIR}${defaultBook.id}_${defaultBook.fileName}`;
+          console.log('[DEBUG] BookService: Destination path:', destPath);
+
+          if (BUNDLE_DEFAULT_BOOKS) {
+            // Mode 1: Copy from bundled assets
+            console.log('[DEBUG] BookService: Using BUNDLED mode');
+            await this.seedBundledDefaultBook(defaultBook, destPath);
+          } else {
+            // Mode 2: Download from server
+            console.log('[DEBUG] BookService: Using DOWNLOAD mode (GitHub)');
+            await this.seedDownloadedDefaultBook(defaultBook, destPath);
+          }
+          console.log(
+            '[DEBUG] BookService: Successfully setup book:',
+            defaultBook.title,
+          );
+        } catch (error) {
+          console.error(
+            '[DEBUG] BookService: FAILED to setup book:',
+            defaultBook.title,
+          );
+          console.error('[DEBUG] BookService: Error:', error);
+        }
+      }
+
+      console.log('[DEBUG] BookService: ====================================');
+      console.log('[DEBUG] BookService: Default books setup complete');
+      console.log('[DEBUG] BookService: ====================================');
+    } catch (error) {
+      console.error('BookService: Error in seedDefaultBooks:', error);
+      // Don't throw - app should still work even if default books fail
+    }
+  }
+
+  /**
+   * Seed a default book from bundled assets
+   */
+  private async seedBundledDefaultBook(
+    defaultBook: (typeof DEFAULT_BOOKS_METADATA)[0],
+    destPath: string,
+  ): Promise<void> {
+    console.log('BookService: Copying bundled asset:', defaultBook.title);
+
+    // Load the bundled asset
+    const assetModule =
+      DEFAULT_BOOKS_ASSETS[defaultBook.id as keyof typeof DEFAULT_BOOKS_ASSETS];
+    const asset = Asset.fromModule(assetModule);
+    await asset.downloadAsync();
+
+    if (!asset.localUri) {
+      throw new Error(`Failed to load bundled asset: ${defaultBook.fileName}`);
+    }
+
+    // Copy to app's books directory
+    await FileSystem.copyAsync({
+      from: asset.localUri,
+      to: destPath,
+    });
+
+    console.log('BookService: Copied bundled asset to:', destPath);
+
+    // Create book record
+    await this.createDefaultBookRecord(defaultBook, destPath);
+  }
+
+  /**
+   * Seed a default book by downloading from server
+   */
+  private async seedDownloadedDefaultBook(
+    defaultBook: (typeof DEFAULT_BOOKS_METADATA)[0],
+    destPath: string,
+  ): Promise<void> {
+    const downloadUrl =
+      DEFAULT_BOOKS_URLS[defaultBook.id as keyof typeof DEFAULT_BOOKS_URLS];
+
+    console.log('[DEBUG] BookService: Starting download from GitHub');
+    console.log('[DEBUG] BookService: Book ID:', defaultBook.id);
+    console.log('[DEBUG] BookService: Title:', defaultBook.title);
+    console.log('[DEBUG] BookService: URL:', downloadUrl);
+    console.log('[DEBUG] BookService: Destination:', destPath);
+
+    // Report start of download
+    if (downloadProgressCallback) {
+      downloadProgressCallback(defaultBook.id, 0, 0, defaultBook.fileSize);
+    }
+
+    // Download the EPUB file from server with progress tracking
+    const downloadResumable = FileSystem.createDownloadResumable(
+      downloadUrl,
+      destPath,
+      {},
+      downloadProgress => {
+        const progress =
+          downloadProgress.totalBytesWritten /
+          downloadProgress.totalBytesExpectedToWrite;
+        const percentProgress = Math.round(progress * 100);
+        const mbWritten = (
+          downloadProgress.totalBytesWritten /
+          1024 /
+          1024
+        ).toFixed(2);
+        const mbTotal = (
+          downloadProgress.totalBytesExpectedToWrite /
+          1024 /
+          1024
+        ).toFixed(2);
+
+        console.log(
+          `[DEBUG] BookService: Downloading ${defaultBook.title}: ${percentProgress}% (${mbWritten}MB / ${mbTotal}MB)`,
+        );
+
+        if (downloadProgressCallback) {
+          downloadProgressCallback(
+            defaultBook.id,
+            percentProgress,
+            downloadProgress.totalBytesWritten,
+            downloadProgress.totalBytesExpectedToWrite,
+          );
+        }
+      },
+    );
+
+    console.log('[DEBUG] BookService: Download started...');
+    const downloadResult = await downloadResumable.downloadAsync();
+
+    if (!downloadResult || downloadResult.status !== 200) {
+      console.error('[DEBUG] BookService: Download failed!');
+      console.error('[DEBUG] BookService: Status:', downloadResult?.status);
+      console.error('[DEBUG] BookService: URI:', downloadResult?.uri);
+      // Clean up partial download
+      await FileSystem.deleteAsync(destPath, { idempotent: true });
+      throw new Error(
+        `Failed to download: ${defaultBook.fileName}, Status: ${downloadResult?.status}`,
+      );
+    }
+
+    // Verify file exists and get size
+    const fileInfo = await FileSystem.getInfoAsync(destPath);
+    const fileSizeMB =
+      fileInfo.exists && fileInfo.size
+        ? (fileInfo.size / 1024 / 1024).toFixed(2)
+        : 'unknown';
+
+    console.log('[DEBUG] BookService: Download completed successfully!');
+    console.log('[DEBUG] BookService: File:', defaultBook.fileName);
+    console.log('[DEBUG] BookService: Saved to:', destPath);
+    console.log('[DEBUG] BookService: File size:', fileSizeMB, 'MB');
+    console.log('[DEBUG] BookService: HTTP Status:', downloadResult.status);
+
+    // Create book record
+    await this.createDefaultBookRecord(defaultBook, destPath);
+    console.log(
+      '[DEBUG] BookService: Database record created for:',
+      defaultBook.title,
+    );
+  }
+
+  /**
+   * Create a book record in the database for a default book
+   */
+  private async createDefaultBookRecord(
+    defaultBook: (typeof DEFAULT_BOOKS_METADATA)[0],
+    destPath: string,
+  ): Promise<void> {
+    // Extract metadata from the EPUB
+    const metadata = await this.extractEpubMetadata(destPath);
+
+    // Create book object with fixed default ID
+    const book: Book = {
+      id: defaultBook.id,
+      title: metadata.title || defaultBook.title,
+      author: metadata.author || defaultBook.author,
+      description: metadata.description || defaultBook.description,
+      filePath: destPath,
+      fileType: 'epub',
+      coverImage: '', // Default books don't have extracted covers
+      addedAt: new Date('2000-01-01'), // Default books have oldest date (appear first)
+      totalPages: 0,
+      currentPage: 0,
+      readingTime: 0,
+      isFavorite: false,
+    };
+
+    await DatabaseService.addBook(book);
+    console.log('BookService: Added default book to library:', book.title);
   }
 
   private async ensureDirectories(): Promise<void> {
@@ -67,61 +363,81 @@ class BookService {
       destPath.substring(0, 50) + '...',
     );
 
-    // On native: Copy file to app storage
-    // On web: Keep the original URI (blob/ObjectURL)
-    if (Platform.OS !== 'web') {
-      console.log('BookService: Copying file to app storage...');
-      await FileSystem.copyAsync({ from: sourcePath, to: destPath });
-      console.log('BookService: File copied successfully');
-    } else {
-      console.log('BookService: Running on web, skipping file copy');
+    let fileCopied = false;
+
+    try {
+      // On native: Copy file to app storage
+      // On web: Keep the original URI (blob/ObjectURL)
+      if (Platform.OS !== 'web') {
+        console.log('BookService: Copying file to app storage...');
+        await FileSystem.copyAsync({ from: sourcePath, to: destPath });
+        fileCopied = true;
+        console.log('BookService: File copied successfully');
+      } else {
+        console.log('BookService: Running on web, skipping file copy');
+      }
+
+      // Extract metadata (basic implementation)
+      console.log('BookService: Extracting metadata...');
+      const originalFileName = fileName.replace(/\.[^/.]+$/, '');
+      const metadata = await this.extractMetadata(
+        destPath,
+        fileType,
+        originalFileName,
+      );
+      console.log('BookService: Metadata extracted:', metadata);
+
+      // Generate cover image path
+      // EPUB: will extract from file, PDF: no thumbnail for now (would need native library)
+      let coverPath = '';
+      if (Platform.OS !== 'web' && fileType === 'epub') {
+        coverPath = `${COVERS_DIR}${bookId}.jpg`;
+      }
+
+      const book: Book = {
+        id: bookId,
+        title: metadata.title || fileName.replace(/\.[^/.]+$/, ''),
+        author: metadata.author || 'Unknown Author',
+        description: metadata.description || '',
+        filePath: destPath,
+        fileType,
+        coverImage: coverPath,
+        addedAt: new Date(),
+        totalPages: metadata.totalPages || 0,
+        currentPage: 0,
+        readingTime: 0,
+        isFavorite: false,
+      };
+      console.log('BookService: Created book object:', {
+        id: book.id,
+        title: book.title,
+        author: book.author,
+        fileName: fileName,
+        fileType: fileType,
+        metadataTitle: metadata.title,
+      });
+
+      console.log('BookService: Adding book to database...');
+      await DatabaseService.addBook(book);
+      console.log('BookService: Book added to database successfully');
+
+      return book;
+    } catch (error) {
+      // Rollback: Clean up copied file if database save failed
+      if (fileCopied && Platform.OS !== 'web') {
+        console.log('BookService: Rolling back - deleting copied file...');
+        try {
+          await FileSystem.deleteAsync(destPath, { idempotent: true });
+          console.log('BookService: Rollback complete - file deleted');
+        } catch (cleanupError) {
+          console.error(
+            'BookService: Failed to clean up file during rollback:',
+            cleanupError,
+          );
+        }
+      }
+      throw error; // Re-throw for UI handling
     }
-
-    // Extract metadata (basic implementation)
-    console.log('BookService: Extracting metadata...');
-    const originalFileName = fileName.replace(/\.[^/.]+$/, '');
-    const metadata = await this.extractMetadata(
-      destPath,
-      fileType,
-      originalFileName,
-    );
-    console.log('BookService: Metadata extracted:', metadata);
-
-    // Generate cover image path
-    // EPUB: will extract from file, PDF: no thumbnail for now (would need native library)
-    let coverPath = '';
-    if (Platform.OS !== 'web' && fileType === 'epub') {
-      coverPath = `${COVERS_DIR}${bookId}.jpg`;
-    }
-
-    const book: Book = {
-      id: bookId,
-      title: metadata.title || fileName.replace(/\.[^/.]+$/, ''),
-      author: metadata.author || 'Unknown Author',
-      description: metadata.description || '',
-      filePath: destPath,
-      fileType,
-      coverImage: coverPath,
-      addedAt: new Date(),
-      totalPages: metadata.totalPages || 0,
-      currentPage: 0,
-      readingTime: 0,
-      isFavorite: false,
-    };
-    console.log('BookService: Created book object:', {
-      id: book.id,
-      title: book.title,
-      author: book.author,
-      fileName: fileName,
-      fileType: fileType,
-      metadataTitle: metadata.title,
-    });
-
-    console.log('BookService: Adding book to database...');
-    await DatabaseService.addBook(book);
-    console.log('BookService: Book added to database successfully');
-
-    return book;
   }
 
   private async extractMetadata(

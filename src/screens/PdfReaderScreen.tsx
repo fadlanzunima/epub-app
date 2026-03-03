@@ -356,6 +356,14 @@ export default function PdfReaderScreen() {
     };
   }, [saveProgress]);
 
+  // Clear PDF data from memory on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      setPdfBase64(null);
+      console.log('📄 PdfReader: Cleaned up PDF data from memory');
+    };
+  }, []);
+
   const sendMessageToWebView = useCallback((data: any) => {
     if (webViewRef.current) {
       webViewRef.current.postMessage(JSON.stringify(data));

@@ -1,13 +1,5 @@
 import * as FileSystem from 'expo-file-system/legacy';
-
-// Supported file formats
-export const SupportedFormats = [
-  '.epub',
-  '.pdf',
-  '.mobi',
-  '.azw',
-  '.azw3',
-] as const;
+import { SupportedFormats } from '../constants/settings';
 
 /**
  * Generate a unique filename with proper extension

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StatusBar } from 'react-native';
 import { PaperProvider, MD3LightTheme, MD3DarkTheme } from 'react-native-paper';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -9,9 +9,12 @@ import { useStore } from './src/hooks/useStore';
 import SettingsService from './src/services/SettingsService';
 import BookService from './src/services/BookService';
 import TrackingService from './src/services/TrackingService';
+import { SplashScreen } from './src/components/SplashScreen';
 
 function AppContent() {
   const { theme, setTheme, setReaderSettings, setBooks } = useStore();
+  const [isReady, setIsReady] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
     const initializeApp = async () => {
@@ -31,8 +34,13 @@ function AppContent() {
         // Track device installation (only on first launch)
         // Configure your Telegram bot token and Discord webhook URL in TrackingService.ts
         await TrackingService.trackInstallation();
+
+        // Mark app as ready
+        setIsReady(true);
       } catch (error) {
         console.error('Error initializing app:', error);
+        // Even on error, mark as ready to show the app
+        setIsReady(true);
       }
     };
 
@@ -42,13 +50,18 @@ function AppContent() {
   const paperTheme = theme === 'dark' ? MD3DarkTheme : MD3LightTheme;
 
   return (
-    <PaperProvider theme={paperTheme}>
-      <StatusBar
-        barStyle={theme === 'dark' ? 'light-content' : 'dark-content'}
-        backgroundColor={paperTheme.colors.background}
-      />
-      <AppNavigator />
-    </PaperProvider>
+    <>
+      {showSplash && (
+        <SplashScreen isReady={isReady} onFinish={() => setShowSplash(false)} />
+      )}
+      <PaperProvider theme={paperTheme}>
+        <StatusBar
+          barStyle={theme === 'dark' ? 'light-content' : 'dark-content'}
+          backgroundColor={paperTheme.colors.background}
+        />
+        <AppNavigator />
+      </PaperProvider>
+    </>
   );
 }
 

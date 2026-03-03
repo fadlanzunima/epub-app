@@ -1,11 +1,10 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { IconButton, useTheme } from 'react-native-paper';
 
 import LibraryScreen from '../screens/LibraryScreen';
-import ReaderScreen from '../screens/ReaderScreen';
 import CategoriesScreen from '../screens/CategoriesScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import StatsScreen from '../screens/StatsScreen';
@@ -13,9 +12,12 @@ import BookDetailScreen from '../screens/BookDetailScreen';
 import EpubReaderScreen from '../screens/EpubReaderScreen';
 import PdfReaderScreen from '../screens/PdfReaderScreen';
 import CategoryDetailScreen from '../screens/CategoryDetailScreen';
+import OnboardingScreen from '../screens/onboarding/OnboardingScreen';
+import { OnboardingService } from '../services/OnboardingService';
 import { Category } from '../types';
 
 export type RootStackParamList = {
+  Onboarding: undefined;
   MainTabs: undefined;
   Reader: { bookId: string };
   BookDetail: { bookId: string };
@@ -94,6 +96,29 @@ function MainTabs() {
 }
 
 export default function AppNavigator() {
+  const [isLoading, setIsLoading] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  useEffect(() => {
+    checkOnboardingStatus();
+  }, []);
+
+  const checkOnboardingStatus = async () => {
+    try {
+      const isComplete = await OnboardingService.isOnboardingComplete();
+      setShowOnboarding(!isComplete);
+    } catch (error) {
+      console.error('Error checking onboarding status:', error);
+      setShowOnboarding(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (isLoading) {
+    return null; // Or return a loading screen
+  }
+
   return (
     <NavigationContainer>
       <Stack.Navigator
@@ -101,6 +126,9 @@ export default function AppNavigator() {
           headerShown: false,
         }}
       >
+        {showOnboarding && (
+          <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+        )}
         <Stack.Screen name="MainTabs" component={MainTabs} />
         <Stack.Screen
           name="BookDetail"

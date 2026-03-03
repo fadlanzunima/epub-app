@@ -4,13 +4,14 @@ import { AppSettings, ReaderSettings, ThemeType } from '../types';
 const SETTINGS_KEY = 'app_settings';
 
 const DEFAULT_READER_SETTINGS: ReaderSettings = {
-  fontSize: 16,
+  fontSize: 12,
   fontFamily: 'system',
   lineHeight: 1.5,
   marginHorizontal: 20,
   marginVertical: 20,
   theme: 'light',
   brightness: 1,
+  showPageNumbers: true,
 };
 
 const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -40,6 +41,7 @@ class SettingsService {
       await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     } catch (error) {
       console.error('Error saving settings:', error);
+      throw new Error('Failed to save settings');
     }
   }
 

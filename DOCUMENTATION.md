@@ -8,7 +8,8 @@
 4. [Project Structure](#project-structure)
 5. [Data Flow](#data-flow)
 6. [How to Use](#how-to-use)
-7. [Development Guide](#development-guide)
+7. [Onboarding Flow](#onboarding-flow)
+8. [Development Guide](#development-guide)
 
 ---
 
@@ -28,6 +29,19 @@ This is a **cross-platform E-Book Reader application** built with React Native t
 | ✏️ Annotations | Highlight text and add personal notes | ✅ Implemented |
 | 📊 Statistics | Track reading progress and reading habits | ✅ Implemented |
 | 🎨 Customization | Multiple themes, font sizes, and reading preferences | ✅ Implemented |
+| 🚀 Onboarding | 8-slide tutorial for new users | ✅ Implemented |
+
+### Recent Features (Latest Update)
+
+#### Onboarding Flow (March 2026)
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| 8-Slide Tutorial | Welcome, Library, Import, Reading, Bookmarks, Organization, Statistics, Get Started | ✅ Completed |
+| Interactive Import | Users can import their first book during onboarding | ✅ Completed |
+| Skip Option | Users can skip onboarding at any time | ✅ Completed |
+| Persistence | Onboarding state saved in AsyncStorage | ✅ Completed |
+| Settings Integration | "Show Tutorial Again" option in Settings | ✅ Completed |
 
 ### Recent Fixes (Latest Update)
 
@@ -321,7 +335,13 @@ epub-app/
 │   │   ├── BookDetailScreen.tsx # Book information
 │   │   ├── EpubReaderScreen.tsx # EPUB reading
 │   │   ├── PdfReaderScreen.tsx  # PDF reading
-│   │   └── ReaderScreen.tsx     # Generic reader wrapper
+│   │   ├── ReaderScreen.tsx     # Generic reader wrapper
+│   │   └── onboarding/          # Onboarding flow
+│   │       ├── OnboardingScreen.tsx
+│   │       └── slides/
+│   │           ├── WelcomeSlide.tsx
+│   │           ├── FeatureSlide.tsx
+│   │           └── GetStartedSlide.tsx
 │   │
 │   ├── navigation/              # Navigation configuration
 │   │   └── AppNavigator.tsx     # Stack & Tab navigators
@@ -338,6 +358,7 @@ epub-app/
 │   │   ├── ReaderService.ts     # Reading session management
 │   │   ├── SettingsService.ts   # Settings persistence
 │   │   ├── StorageService.ts    # File storage operations
+│   │   ├── OnboardingService.ts # Onboarding state management
 │   │   └── SyncService.ts       # Cloud sync (future)
 │   │
 │   ├── database/                # Database layer
@@ -360,7 +381,8 @@ epub-app/
 │   ├── constants/               # App constants
 │   │   ├── colors.ts            # Theme colors
 │   │   ├── fonts.ts             # Typography
-│   │   └── settings.ts          # Default settings
+│   │   ├── settings.ts          # Default settings
+│   │   └── onboarding.ts        # Onboarding content
 │   │
 │   ├── context/                 # React contexts
 │   │   └── ThemeContext.tsx     # Theme provider (if needed)
@@ -372,7 +394,8 @@ epub-app/
 │
 ├── plans/                       # Documentation
 │   ├── ARCHITECTURE.md          # Architecture decisions
-│   └── SYSTEM_DIAGRAM.md        # System diagrams
+│   ├── SYSTEM_DIAGRAM.md        # System diagrams
+│   └── ONBOARDING_FLOW.md       # Onboarding flow design
 │
 └── .expo/                       # Expo generated files
 ```
@@ -444,6 +467,46 @@ User opens book
 │ (Every 30s or   │
 │  on change)     │
 └─────────────────┘
+```
+
+---
+
+## Onboarding Flow
+
+The app features an 8-slide interactive onboarding tutorial for new users.
+
+### Onboarding Screens
+
+| Slide | Title | Description |
+|-------|-------|-------------|
+| 1 | Welcome | App introduction with feature highlights |
+| 2 | Your Library | Digital bookshelf overview |
+| 3 | Import Books | How to add books to your collection |
+| 4 | Reading Experience | Customization options (themes, fonts) |
+| 5 | Bookmarks & Annotations | Advanced reading features |
+| 6 | Organization | Categories and favorites |
+| 7 | Statistics | Reading progress tracking |
+| 8 | Get Started | Final CTAs to import first book or explore |
+
+### Implementation
+
+- **Persistence**: Onboarding state stored in AsyncStorage
+- **Navigation**: Conditional routing in AppNavigator - shows onboarding on first launch
+- **Skip Option**: Users can skip at any time via top-right button
+- **Reset**: "Show Tutorial Again" button available in Settings
+
+### Files
+
+```
+src/
+├── screens/onboarding/
+│   ├── OnboardingScreen.tsx      # Main container with pager
+│   └── slides/
+│       ├── WelcomeSlide.tsx      # Animated intro
+│       ├── FeatureSlide.tsx      # Reusable feature slides
+│       └── GetStartedSlide.tsx   # Final slide with CTAs
+├── services/OnboardingService.ts # State persistence
+└── constants/onboarding.ts       # Slide content
 ```
 
 ---
