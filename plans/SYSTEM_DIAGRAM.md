@@ -1,10 +1,41 @@
 # System Architecture Diagram
 
+> **Last Updated**: 2026-03-03
+> **Status**: SplashScreen and Onboarding implemented
+
+## App Launch Flow
+
+```mermaid
+flowchart TD
+    A[App Launch] --> B[SplashScreen]
+    B --> C{First Launch?}
+    C -->|Yes| D[Onboarding Flow]
+    C -->|No| E[Main App]
+    D --> F[Welcome Slide]
+    F --> G[Features Slide]
+    G --> H[Get Started Slide]
+    H --> E
+
+    subgraph "SplashScreen Component"
+        B1[Animated Logo]
+        B2[2s Minimum Display]
+        B3[Fade Out Transition]
+    end
+
+    subgraph "Onboarding Screens"
+        D1[WelcomeSlide.tsx]
+        D2[FeatureSlide.tsx]
+        D3[GetStartedSlide.tsx]
+    end
+```
+
 ## High-Level App Architecture
 
 ```mermaid
 flowchart TB
     subgraph "Presentation Layer"
+        SPLASH[SplashScreen<br/>Animated Logo]
+        ONBOARD[Onboarding<br/>3-Slide Flow]
         UI[UI Components<br/>React Native Paper]
         SCREENS[Screens<br/>Library, Reader, Settings]
         NAV[Navigation<br/>React Navigation]
@@ -17,22 +48,24 @@ flowchart TB
     end
 
     subgraph "Data Layer"
-        DB[(Local Database<br/>WatermelonDB/SQLite)]
-        FILESYS[File System<br/>RNFS]
-        CACHE[Fast Storage<br/>MMKV]
+        DB[(Local Database<br/>SQLite/Expo)]
+        FILESYS[File System<br/>Expo FileSystem]
+        CACHE[Fast Storage<br/>AsyncStorage]
     end
 
     subgraph "External Services"
-        CLOUD[(Cloud Sync<br/>Firebase)]
+        GITHUB[GitHub<br/>Default Books]
         IMPORT[File Import<br/>Document Picker]
     end
 
     subgraph "Readers"
         EPUB[EPUB Reader<br/>WebView + epub.js]
-        PDF[PDF Reader<br/>react-native-pdf]
-        MOBI[MOBI Converter<br/>mobi.js]
+        PDF[PDF Reader<br/>WebView + PDF.js]
     end
 
+    SPLASH --> ONBOARD
+    SPLASH --> SCREENS
+    ONBOARD --> SCREENS
     SCREENS --> HOOKS
     SCREENS --> UI
     NAV --> SCREENS
@@ -41,12 +74,10 @@ flowchart TB
     SERVICES --> DB
     SERVICES --> FILESYS
     SERVICES --> CACHE
-    SERVICES --> CLOUD
+    SERVICES --> GITHUB
     SERVICES --> IMPORT
     SCREENS --> EPUB
     SCREENS --> PDF
-    SCREENS --> MOBI
-    MOBI --> EPUB
 ```
 
 ## Data Flow Diagram
@@ -154,12 +185,13 @@ erDiagram
     }
 ```
 
-## Navigation Structure
+## Navigation Structure (Updated)
 
 ```mermaid
 flowchart TB
     subgraph "Root Stack"
-        AUTH[Auth Stack<br/>Login/Register]
+        SPLASH[SplashScreen<br/>Animated Logo]
+        ONBOARD[Onboarding<br/>3-Slide Flow]
         MAIN[Main Tab Navigator]
     end
 
@@ -176,9 +208,12 @@ flowchart TB
         READER_E[EPUB Reader]
         READER_P[PDF Reader]
         BOOK_DETAIL[Book Details]
+        CAT_DETAIL[Category Detail]
     end
 
-    AUTH --> MAIN
+    SPLASH --> ONBOARD
+    SPLASH --> MAIN
+    ONBOARD --> MAIN
     MAIN --> LIBRARY
     MAIN --> CATEGORIES
     MAIN --> STATS
@@ -188,6 +223,7 @@ flowchart TB
     LIB_LIST --> BOOK_DETAIL
     LIB_LIST --> READER_E
     LIB_LIST --> READER_P
+    CATEGORIES --> CAT_DETAIL
 ```
 
 ## Sync Architecture (Phase 10)
@@ -220,3 +256,42 @@ flowchart TB
     FB_AUTH -->|Auth State| D2_DB
     FB_STORAGE <-->|Cover Images| D2_DB
 ```
+
+---
+
+# Implementation Checklist
+
+## Architecture Components
+- [x] SplashScreen component with animation
+- [x] Onboarding flow (3 slides)
+- [x] Main Tab Navigator (Library, Categories, Stats, Settings)
+- [x] Library Stack navigation
+- [x] EPUB Reader with WebView
+- [x] PDF Reader with WebView
+- [x] SQLite database integration
+- [x] FileSystem operations
+- [x] GitHub default books integration
+
+## Data Layer
+- [x] Book entity
+- [x] Category entity
+- [x] Bookmark entity
+- [x] Annotation entity
+- [x] ReadingProgress entity
+- [x] BookCategory junction table
+
+## Services
+- [x] BookService
+- [x] DatabaseService
+- [x] ReaderService
+- [x] StorageService
+- [x] SettingsService
+- [x] OnboardingService
+- [x] TrackingService
+- [x] DeviceInfoService
+
+## Future Enhancements
+- [ ] Firebase Cloud Sync
+- [ ] MOBI format support
+- [ ] Authentication (Login/Register)
+- [ ] iOS-specific optimizations
