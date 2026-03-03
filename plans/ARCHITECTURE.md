@@ -6,8 +6,14 @@ A cross-platform e-reader app built with React Native supporting EPUB, MOBI, and
 ## Technology Stack
 
 ### Core Framework
-- **React Native 0.84+** with TypeScript
-- **Expo SDK 55+** - Using Expo Go for rapid development and testing
+- **React Native 0.76+** with TypeScript
+- **Expo SDK 52** - Using expo-dev-client for development
+
+### Onboarding & Splash
+- **Custom SplashScreen component** with animated logo and smooth fade-out
+- **Multi-slide onboarding flow** with MaterialCommunityIcons
+- **OnboardingService** for tracking first-time user experience
+- **Feature highlights**: EPUB/PDF support, library management, themes, bookmarks
 
 ### Navigation
 - **React Navigation 6+** (Stack + Tab + Drawer navigators)
@@ -57,16 +63,29 @@ A cross-platform e-reader app built with React Native supporting EPUB, MOBI, and
 ```
 src/
 ├── assets/                 # Images, fonts, default covers
+│   ├── js/                # epub.js, jszip.min.js for WebView
+│   └── books/             # Default EPUB files and covers
 ├── components/             # Reusable UI components
-│   ├── common/            # Buttons, inputs, etc.
+│   ├── common/            # Buttons, inputs, FilePicker
 │   ├── reader/            # Reader-specific components
-│   └── library/           # Library view components
+│   ├── library/           # Library view components
+│   └── SplashScreen.tsx   # Animated splash screen
 ├── screens/               # Screen components
 │   ├── LibraryScreen.tsx
 │   ├── ReaderScreen.tsx
 │   ├── CategoriesScreen.tsx
 │   ├── SettingsScreen.tsx
-│   └── StatsScreen.tsx
+│   ├── StatsScreen.tsx
+│   ├── BookDetailScreen.tsx
+│   ├── CategoryDetailScreen.tsx
+│   ├── EpubReaderScreen.tsx
+│   ├── PdfReaderScreen.tsx
+│   └── onboarding/        # Onboarding flow screens
+│       ├── OnboardingScreen.tsx
+│       └── slides/
+│           ├── WelcomeSlide.tsx
+│           ├── FeatureSlide.tsx
+│           └── GetStartedSlide.tsx
 ├── navigation/            # Navigation configuration
 │   └── AppNavigator.tsx
 ├── hooks/                 # Custom React hooks
@@ -74,9 +93,14 @@ src/
 │   ├── useReader.ts
 │   └── useSettings.ts
 ├── services/              # Business logic
-│   ├── BookService.ts     # Book CRUD operations
+│   ├── BookService.ts     # Book CRUD operations, GitHub default books
+│   ├── DatabaseService.ts # SQLite operations
 │   ├── ReaderService.ts   # Reading session management
 │   ├── StorageService.ts  # File storage operations
+│   ├── SettingsService.ts # App settings management
+│   ├── OnboardingService.ts # First-time UX tracking
+│   ├── TrackingService.ts # Reading statistics tracking
+│   ├── DeviceInfoService.ts # Device information utilities
 │   └── SyncService.ts     # Cloud sync (optional)
 ├── database/              # Database models & config
 │   ├── models/
@@ -198,3 +222,45 @@ src/
 2. Sanitize imported file paths
 3. Validate file formats before processing
 4. Handle corrupted files gracefully
+
+---
+
+# Implementation Checklist
+
+## UI/UX
+- [x] Splash Screen with animated logo
+- [x] Onboarding flow with 3 slides (Welcome, Features, Get Started)
+- [x] Onboarding icons using MaterialCommunityIcons
+- [x] Proper button positioning in onboarding footer
+- [x] Dark/Light theme support
+- [x] Default font size: 12px
+
+## Core Features
+- [x] EPUB reader with epub.js WebView
+- [x] PDF reader with PDF.js WebView
+- [x] Library management (grid/list view)
+- [x] Categories with color coding
+- [x] Bookmarks and annotations
+- [x] Reading progress tracking
+- [x] Reading statistics
+
+## Default Books
+- [x] GitHub-hosted default EPUB files
+- [x] Auto-download on first launch
+- [x] Cover images for default books
+
+## Build & Deployment
+- [x] EAS (Expo Application Services) configured
+- [x] Android build support
+- [x] App icons and splash assets
+- [x] metro.config.js for asset handling
+
+## Known Issues / TODO
+- [ ] iOS build testing
+- [ ] Cloud sync implementation
+- [ ] MOBI format support
+- [ ] Unit tests
+- [ ] E2E tests
+
+## Last Updated
+2026-03-03 - Splash screen, onboarding UI fixes, default font size changes
