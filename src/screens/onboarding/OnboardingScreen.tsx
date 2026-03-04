@@ -8,7 +8,9 @@ import {
   TouchableOpacity,
   ViewToken,
 } from 'react-native';
-import { Text, Button, useTheme, IconButton } from 'react-native-paper';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import { Text, useTheme, IconButton } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -24,8 +26,6 @@ import { FeatureSlide } from './slides/FeatureSlide';
 import { GetStartedSlide } from './slides/GetStartedSlide';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface SlideItemProps {
   item: OnboardingSlide;
@@ -198,46 +198,50 @@ export default function OnboardingScreen() {
         scrollEnabled={true}
       />
 
-      {/* Pagination Dots */}
-      {renderPagination()}
-
-      {/* Navigation Buttons */}
+      {/* Footer with Navigation */}
       <View style={styles.footer}>
-        {/* Previous Button - Only show on middle slides */}
-        {!isFirstSlide && !isLastSlide ? (
-          <IconButton
-            icon="chevron-left"
-            size={28}
-            iconColor={theme.colors.onSurface}
-            onPress={handlePrevious}
-            style={styles.navButton}
-          />
-        ) : (
-          <View style={styles.navButtonPlaceholder} />
-        )}
+        {/* Left: Previous Button (hidden on first slide) */}
+        <View style={styles.footerSide}>
+          {!isFirstSlide && !isLastSlide && (
+            <TouchableOpacity
+              onPress={handlePrevious}
+              style={[
+                styles.navCircleButton,
+                { backgroundColor: theme.colors.surfaceVariant },
+              ]}
+            >
+              <IconButton
+                icon="chevron-left"
+                size={24}
+                iconColor={theme.colors.onSurface}
+                style={{ margin: 0 }}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
 
-        {/* Next Button - Show on all slides except last */}
-        {!isLastSlide && (
-          <Button
-            mode="contained"
-            onPress={handleNext}
-            style={styles.nextButton}
-            contentStyle={styles.nextButtonContent}
-            labelStyle={styles.nextButtonLabel}
-          >
-            Next
-          </Button>
-        )}
-      </View>
+        {/* Center: Pagination Dots */}
+        <View style={styles.footerCenter}>{renderPagination()}</View>
 
-      {/* Progress indicator */}
-      <View style={styles.progressContainer}>
-        <Text
-          variant="bodySmall"
-          style={{ color: theme.colors.onSurfaceVariant }}
-        >
-          {currentIndex + 1} / {TOTAL_SLIDES}
-        </Text>
+        {/* Right: Next Button (hidden on last slide) */}
+        <View style={styles.footerSide}>
+          {!isLastSlide && (
+            <TouchableOpacity
+              onPress={handleNext}
+              style={[
+                styles.navCircleButton,
+                { backgroundColor: theme.colors.surfaceVariant },
+              ]}
+            >
+              <IconButton
+                icon="chevron-right"
+                size={24}
+                iconColor={theme.colors.onSurface}
+                style={{ margin: 0 }}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -254,56 +258,42 @@ const styles = StyleSheet.create({
     zIndex: 10,
     padding: 8,
   },
-  paginationContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  paginationDot: {
-    height: 8,
-    borderRadius: 4,
-    marginHorizontal: 4,
-  },
   footer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingBottom: 40,
-    paddingTop: 10,
+    paddingBottom: 50,
+    paddingTop: 20,
   },
-  navButton: {
-    margin: 0,
-    width: 40,
-    height: 40,
+  footerSide: {
+    width: 50,
+    alignItems: 'center',
   },
-  navButtonPlaceholder: {
-    width: 40,
-  },
-  nextButton: {
+  footerCenter: {
     flex: 1,
-    maxWidth: 180,
-    borderRadius: 25,
-    elevation: 3,
+    alignItems: 'center',
+  },
+  navCircleButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
   },
-  nextButtonContent: {
-    height: 50,
-  },
-  nextButtonLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-  },
-  progressContainer: {
-    position: 'absolute',
-    bottom: 100,
-    left: 0,
-    right: 0,
+  paginationContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
+  },
+  paginationDot: {
+    height: 8,
+    borderRadius: 4,
+    marginHorizontal: 4,
   },
 });

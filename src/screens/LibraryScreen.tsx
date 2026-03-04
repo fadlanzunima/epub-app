@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -7,8 +7,8 @@ import {
   TouchableOpacity,
   Image,
   ScrollView,
-  Animated,
 } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   Text,
   Searchbar,
@@ -30,6 +30,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { Book, BookFormat } from '../types';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
+import { DEFAULT_BOOKS_COVERS } from '../config/defaultBooks';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -73,9 +74,94 @@ function BookCard({
   // Show placeholder if no cover image, image failed to load, or file doesn't exist
   const showPlaceholder = !coverExists || imageError;
 
+  // Get placeholder based on file type
+  const getFileTypePlaceholder = () => {
+    switch (book.fileType.toLowerCase()) {
+      case 'pdf':
+        return (
+          <View
+            style={[styles.fileTypePlaceholder, { backgroundColor: '#FF6B6B' }]}
+          >
+            <MaterialCommunityIcons
+              name="file-pdf-box"
+              size={56}
+              color="#FFFFFF"
+            />
+          </View>
+        );
+      case 'epub':
+        return (
+          <View
+            style={[styles.fileTypePlaceholder, { backgroundColor: '#4ECDC4' }]}
+          >
+            <MaterialCommunityIcons
+              name="book-open-variant"
+              size={56}
+              color="#FFFFFF"
+            />
+          </View>
+        );
+      case 'mobi':
+        return (
+          <View
+            style={[styles.fileTypePlaceholder, { backgroundColor: '#95E1D3' }]}
+          >
+            <MaterialCommunityIcons name="book" size={56} color="#FFFFFF" />
+          </View>
+        );
+      default:
+        return (
+          <View
+            style={[
+              styles.fileTypePlaceholder,
+              { backgroundColor: theme.colors.primaryContainer },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="file-document"
+              size={56}
+              color={theme.colors.onPrimaryContainer}
+            />
+          </View>
+        );
+    }
+  };
+
+  // Select a default cover based on book id hash (only for default books)
+  const getDefaultCover = () => {
+    const covers = [
+      DEFAULT_BOOKS_COVERS['default-1'],
+      DEFAULT_BOOKS_COVERS['default-2'],
+      DEFAULT_BOOKS_COVERS['default-3'],
+    ];
+    // Use book.id to consistently select the same cover for the same book
+    const index =
+      book.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) %
+      covers.length;
+    return covers[index];
+  };
+
+  // Check if this is a default book (has a default cover asset)
+  const isDefaultBook = book.id.startsWith('default-');
+
   return (
-    <TouchableOpacity onPress={onPress} style={styles.bookCard}>
-      <View style={styles.coverContainer}>
+    <TouchableOpacity
+      onPress={onPress}
+      style={[
+        styles.bookCard,
+        {
+          backgroundColor: theme.colors.surface,
+          shadowColor: theme.colors.shadow,
+        },
+      ]}
+    >
+      <View
+        style={
+          !showPlaceholder || isDefaultBook
+            ? styles.coverContainer
+            : styles.placeholderContainer
+        }
+      >
         {!showPlaceholder ? (
           <Image
             source={{ uri: book.coverImage }}
@@ -94,40 +180,58 @@ function BookCard({
               console.log('📚 Image loaded successfully for', book.title)
             }
           />
+        ) : isDefaultBook ? (
+          <Image
+            source={getDefaultCover()}
+            style={styles.defaultCoverImage}
+            resizeMode="cover"
+          />
         ) : (
-          <View
-            style={[
-              styles.placeholderCover,
-              { backgroundColor: theme.colors.surfaceVariant },
-            ]}
-          >
-            <IconButton
-              icon="book"
-              size={40}
-              iconColor={theme.colors.primary}
-            />
-          </View>
+          getFileTypePlaceholder()
         )}
       </View>
       <View style={styles.bookInfo}>
-        <Text numberOfLines={2} style={styles.bookTitle}>
+        <Text
+          numberOfLines={2}
+          variant="titleMedium"
+          style={[styles.bookTitle, { color: theme.colors.onSurface }]}
+        >
           {book.title || 'NO TITLE'}
         </Text>
         <Text
           numberOfLines={1}
+          variant="bodyMedium"
           style={[styles.bookAuthor, { color: theme.colors.onSurfaceVariant }]}
         >
-          {book.author || 'NO AUTHOR'} ({book.fileType})
+          {book.author || 'NO AUTHOR'}
         </Text>
-        <Text style={[styles.bookProgress, { color: theme.colors.primary }]}>
-          {book.totalPages > 0
-            ? `${Math.round((book.currentPage / book.totalPages) * 100)}%`
-            : 'New'}
-        </Text>
+        <View style={styles.bookMetaRow}>
+          <View
+            style={[
+              styles.formatBadge,
+              { backgroundColor: theme.colors.primaryContainer },
+            ]}
+          >
+            <Text
+              variant="labelSmall"
+              style={{ color: theme.colors.onPrimaryContainer }}
+            >
+              {book.fileType.toUpperCase()}
+            </Text>
+          </View>
+          <Text
+            variant="bodySmall"
+            style={[styles.bookProgress, { color: theme.colors.primary }]}
+          >
+            {book.totalPages > 0
+              ? `${Math.round((book.currentPage / book.totalPages) * 100)}%`
+              : 'New'}
+          </Text>
+        </View>
       </View>
       <IconButton
         icon={book.isFavorite ? 'heart' : 'heart-outline'}
-        size={20}
+        size={22}
         iconColor={
           book.isFavorite ? theme.colors.error : theme.colors.onSurfaceVariant
         }
@@ -152,6 +256,28 @@ export default function LibraryScreen() {
   } = useBooks();
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [deleteDialogVisible, setDeleteDialogVisible] = useState(false);
+  const [bookToDelete, setBookToDelete] = useState<Book | null>(null);
+  const [filter, setFilter] = useState<
+    'all' | 'favorites' | 'epub' | 'pdf' | 'mobi'
+  >('all');
+
+  const showDeleteDialog = (book: Book) => {
+    setBookToDelete(book);
+    setDeleteDialogVisible(true);
+  };
+
+  const hideDeleteDialog = () => {
+    setDeleteDialogVisible(false);
+    setBookToDelete(null);
+  };
+
+  const confirmDelete = async () => {
+    if (bookToDelete) {
+      await deleteBook(bookToDelete.id);
+      hideDeleteDialog();
+    }
+  };
 
   useEffect(() => {
     // Initialize storage on mount
@@ -257,13 +383,21 @@ export default function LibraryScreen() {
     }
   };
 
-  const filteredBooks = searchQuery
-    ? books.filter(
-        b =>
-          b.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          b.author.toLowerCase().includes(searchQuery.toLowerCase()),
-      )
-    : books;
+  const filteredBooks = books
+    .filter(book => {
+      if (filter === 'favorites') return book.isFavorite;
+      if (filter === 'epub') return book.fileType === 'epub';
+      if (filter === 'pdf') return book.fileType === 'pdf';
+      if (filter === 'mobi') return book.fileType === 'mobi';
+      return true;
+    })
+    .filter(book => {
+      if (!searchQuery) return true;
+      return (
+        book.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        book.author.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    });
 
   return (
     <View
@@ -275,6 +409,90 @@ export default function LibraryScreen() {
         value={searchQuery}
         style={styles.searchBar}
       />
+
+      {/* Filter Buttons */}
+      <View style={styles.filterContainer}>
+        <TouchableOpacity
+          style={[
+            styles.filterButton,
+            filter === 'all' && { backgroundColor: theme.colors.primary },
+          ]}
+          onPress={() => setFilter('all')}
+        >
+          <Text
+            style={[
+              styles.filterButtonText,
+              filter === 'all' && { color: theme.colors.onPrimary },
+            ]}
+          >
+            All
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.filterButton,
+            filter === 'favorites' && { backgroundColor: theme.colors.primary },
+          ]}
+          onPress={() => setFilter('favorites')}
+        >
+          <Text
+            style={[
+              styles.filterButtonText,
+              filter === 'favorites' && { color: theme.colors.onPrimary },
+            ]}
+          >
+            Favorites
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.filterButton,
+            filter === 'epub' && { backgroundColor: theme.colors.primary },
+          ]}
+          onPress={() => setFilter('epub')}
+        >
+          <Text
+            style={[
+              styles.filterButtonText,
+              filter === 'epub' && { color: theme.colors.onPrimary },
+            ]}
+          >
+            EPUB
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.filterButton,
+            filter === 'pdf' && { backgroundColor: theme.colors.primary },
+          ]}
+          onPress={() => setFilter('pdf')}
+        >
+          <Text
+            style={[
+              styles.filterButtonText,
+              filter === 'pdf' && { color: theme.colors.onPrimary },
+            ]}
+          >
+            PDF
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.filterButton,
+            filter === 'mobi' && { backgroundColor: theme.colors.primary },
+          ]}
+          onPress={() => setFilter('mobi')}
+        >
+          <Text
+            style={[
+              styles.filterButtonText,
+              filter === 'mobi' && { color: theme.colors.onPrimary },
+            ]}
+          >
+            MOBI
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       {filteredBooks.length === 0 && !isLoading ? (
         <ScrollView
@@ -320,7 +538,7 @@ export default function LibraryScreen() {
                   ]}
                   onPress={() => {
                     swipeable.close();
-                    deleteBook(item.id);
+                    showDeleteDialog(item);
                   }}
                 >
                   <IconButton icon="delete" iconColor="#fff" size={24} />
@@ -349,8 +567,28 @@ export default function LibraryScreen() {
       <FAB
         icon="plus"
         style={[styles.fab, { backgroundColor: theme.colors.primary }]}
+        color="#FFF"
         onPress={handleImportBook}
       />
+
+      {/* Delete Confirmation Dialog */}
+      <Portal>
+        <Dialog visible={deleteDialogVisible} onDismiss={hideDeleteDialog}>
+          <Dialog.Title>Delete Book</Dialog.Title>
+          <Dialog.Content>
+            <Text variant="bodyMedium">
+              Are you sure you want to delete "{bookToDelete?.title}"? This
+              action cannot be undone.
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={hideDeleteDialog}>Cancel</Button>
+            <Button onPress={confirmDelete} textColor={theme.colors.error}>
+              Delete
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </View>
   );
 }
@@ -363,6 +601,24 @@ const styles = StyleSheet.create({
   searchBar: {
     margin: 16,
   },
+  filterContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    marginBottom: 12,
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  filterButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    backgroundColor: 'rgba(103, 80, 164, 0.1)',
+    alignItems: 'center',
+  },
+  filterButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
   list: {
     padding: 16,
   },
@@ -371,17 +627,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 12,
+    elevation: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   coverContainer: {
-    width: 60,
-    height: 90,
-    borderRadius: 4,
+    width: 90,
+    height: 135,
+    borderRadius: 8,
+    overflow: 'hidden',
+    elevation: 2,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+  },
+  placeholderContainer: {
+    width: 90,
+    height: 135,
+    borderRadius: 8,
     overflow: 'hidden',
   },
   coverImage: {
     width: '100%',
     height: '100%',
+  },
+  defaultCoverImage: {
+    width: '100%',
+    height: '100%',
+  },
+  fileTypePlaceholder: {
+    flex: 1,
+    margin: 4,
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   placeholderCover: {
     width: '100%',
@@ -396,18 +677,28 @@ const styles = StyleSheet.create({
   bookInfo: {
     flex: 1,
     marginLeft: 12,
+    justifyContent: 'center',
   },
   bookTitle: {
-    fontSize: 16,
     fontWeight: '600',
+    lineHeight: 22,
   },
   bookAuthor: {
-    fontSize: 14,
-    marginTop: 4,
+    marginTop: 2,
+  },
+  bookMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    gap: 8,
+  },
+  formatBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
   bookProgress: {
-    fontSize: 12,
-    marginTop: 4,
+    fontWeight: '500',
   },
   fab: {
     position: 'absolute',

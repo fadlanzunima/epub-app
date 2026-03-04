@@ -57,12 +57,19 @@ export const StorageKeys = {
 // Tracking configuration
 // IMPORTANT: Set these values via environment variables or secure configuration
 // Do NOT commit actual tokens to version control
+// Import from @env - requires react-native-dotenv
+import {
+  TELEGRAM_BOT_TOKEN,
+  TELEGRAM_CHAT_ID,
+  DISCORD_WEBHOOK_URL,
+} from '@env';
+
 export const TrackingConfig = {
-  TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '', // Set via env var
-  TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID || '', // Set via env var
-  DISCORD_WEBHOOK_URL: process.env.DISCORD_WEBHOOK_URL || '', // Set via env var
-  ENABLE_TELEGRAM: !!process.env.TELEGRAM_BOT_TOKEN, // Auto-enable if token is set
-  ENABLE_DISCORD: !!process.env.DISCORD_WEBHOOK_URL, // Auto-enable if webhook is set
+  TELEGRAM_BOT_TOKEN: TELEGRAM_BOT_TOKEN || '', // Set via env var
+  TELEGRAM_CHAT_ID: TELEGRAM_CHAT_ID || '', // Set via env var
+  DISCORD_WEBHOOK_URL: DISCORD_WEBHOOK_URL || '', // Set via env var
+  ENABLE_TELEGRAM: !!TELEGRAM_BOT_TOKEN, // Auto-enable if token is set
+  ENABLE_DISCORD: !!DISCORD_WEBHOOK_URL, // Auto-enable if webhook is set
 } as const;
 
 // File type mappings

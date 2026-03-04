@@ -72,9 +72,9 @@ export function SplashScreen({ onFinish, isReady }: SplashScreenProps) {
         <View style={styles.iconContainer}>
           <Animated.View style={{ transform: [{ rotate: spin }] }}>
             <MaterialCommunityIcons
-              name="book-open-variant"
+              name="book-open-page-variant"
               size={80}
-              color="#FFFFFF"
+              color="#6750A4"
             />
           </Animated.View>
         </View>
@@ -117,7 +117,7 @@ const styles = StyleSheet.create({
     width: 140,
     height: 140,
     borderRadius: 70,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,

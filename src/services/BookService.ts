@@ -10,6 +10,7 @@ import {
   DEFAULT_BOOKS_URLS,
   DEFAULT_BOOKS_ASSETS,
   DEFAULT_BOOKS_METADATA,
+  DEFAULT_BOOKS_COVERS,
 } from '../config/defaultBooks';
 import { Asset } from 'expo-asset';
 
@@ -314,15 +315,41 @@ class BookService {
     // Extract metadata from the EPUB
     const metadata = await this.extractEpubMetadata(destPath);
 
+    // Copy cover asset to file system
+    let coverImagePath = '';
+    try {
+      const coverAssetModule =
+        DEFAULT_BOOKS_COVERS[
+          defaultBook.id as keyof typeof DEFAULT_BOOKS_COVERS
+        ];
+      if (coverAssetModule) {
+        const asset = Asset.fromModule(coverAssetModule);
+        await asset.downloadAsync();
+        if (asset.localUri) {
+          const coverDestPath = `${COVERS_DIR}${defaultBook.id}.png`;
+          await FileSystem.copyAsync({
+            from: asset.localUri,
+            to: coverDestPath,
+          });
+          coverImagePath = coverDestPath;
+          console.log('[DEBUG] BookService: Copied cover to:', coverDestPath);
+        }
+      }
+    } catch (error) {
+      console.error('[DEBUG] BookService: Failed to copy cover:', error);
+    }
+
     // Create book object with fixed default ID
+    // Use filename (without extension) as title
+    const fileNameWithoutExt = defaultBook.fileName.replace(/\.[^/.]+$/, '');
     const book: Book = {
       id: defaultBook.id,
-      title: metadata.title || defaultBook.title,
+      title: fileNameWithoutExt,
       author: metadata.author || defaultBook.author,
       description: metadata.description || defaultBook.description,
       filePath: destPath,
       fileType: 'epub',
-      coverImage: '', // Default books don't have extracted covers
+      coverImage: coverImagePath,
       addedAt: new Date('2000-01-01'), // Default books have oldest date (appear first)
       totalPages: 0,
       currentPage: 0,
@@ -454,9 +481,10 @@ class BookService {
       return this.extractEpubMetadata(filePath);
     } else if (fileType === 'pdf') {
       const pdfMetadata = await extractPdfMetadata(filePath, originalFileName);
+      // Always use filename for PDF title instead of metadata
       return {
-        title: pdfMetadata.title,
-        author: pdfMetadata.author,
+        title: originalFileName || 'Untitled PDF',
+        author: pdfMetadata.author || 'Unknown Author',
         description: pdfMetadata.subject,
         totalPages: pdfMetadata.pageCount,
       };

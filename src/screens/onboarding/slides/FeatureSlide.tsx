@@ -23,13 +23,13 @@ export function FeatureSlide({ slide }: FeatureSlideProps) {
         <View
           style={[
             styles.iconBackground,
-            { backgroundColor: theme.colors.primary + '15' },
+            { backgroundColor: theme.colors.primaryContainer },
           ]}
         >
           <MaterialCommunityIcons
             name={slide.icon as any}
             size={56}
-            color={theme.colors.primary}
+            color={theme.colors.onPrimaryContainer}
           />
         </View>
       </View>

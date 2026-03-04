@@ -2578,78 +2578,12 @@ export default function EpubReaderScreen() {
                       <View
                         style={[
                           styles.themeCheckmark,
-                          { backgroundColor: readerSettings.progressBarColor },
+                          { backgroundColor: theme.colors.primary },
                         ]}
                       >
                         <IconButton
                           icon="check"
                           size={16}
-                          iconColor="#FFFFFF"
-                        />
-                      </View>
-                    )}
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-
-            {/* Progress Color Section */}
-            <View
-              style={[
-                styles.settingsCard,
-                { backgroundColor: theme.colors.elevation.level1 },
-              ]}
-            >
-              <View style={styles.settingsCardHeader}>
-                <IconButton
-                  icon="progress-check"
-                  size={24}
-                  iconColor={theme.colors.primary}
-                />
-                <Text variant="titleMedium" style={styles.settingsCardTitle}>
-                  Progress Color
-                </Text>
-              </View>
-
-              <View style={styles.colorButtons}>
-                {[
-                  { color: '#6750A4', name: 'Purple' },
-                  { color: '#FF0266', name: 'Pink' },
-                  { color: '#03DAC6', name: 'Teal' },
-                  { color: '#4CAF50', name: 'Green' },
-                  { color: '#2196F3', name: 'Blue' },
-                  { color: '#FF9800', name: 'Orange' },
-                ].map(c => (
-                  <Pressable
-                    key={c.color}
-                    onPress={() =>
-                      updateReaderSetting('progressBarColor', c.color)
-                    }
-                    style={({ pressed }) => [
-                      styles.colorButtonCard,
-                      {
-                        backgroundColor: c.color + '20',
-                        borderColor:
-                          readerSettings.progressBarColor === c.color
-                            ? c.color
-                            : 'transparent',
-                      },
-                      pressed && { opacity: 0.7 },
-                    ]}
-                  >
-                    <View
-                      style={[styles.colorCircle, { backgroundColor: c.color }]}
-                    />
-                    {readerSettings.progressBarColor === c.color && (
-                      <View
-                        style={[
-                          styles.colorSelectedIndicator,
-                          { backgroundColor: c.color },
-                        ]}
-                      >
-                        <IconButton
-                          icon="check"
-                          size={14}
                           iconColor="#FFFFFF"
                         />
                       </View>
@@ -2978,13 +2912,13 @@ const styles = StyleSheet.create({
   },
   settingsCard: {
     borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
+    padding: 12,
+    marginBottom: 8,
   },
   settingsCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 8,
   },
   settingsCardTitle: {
     fontWeight: '600',
@@ -3001,6 +2935,7 @@ const styles = StyleSheet.create({
   },
   sliderLabel: {
     opacity: 0.8,
+    marginBottom: 8,
   },
   sliderValue: {
     backgroundColor: 'rgba(103, 80, 164, 0.15)',
@@ -3073,7 +3008,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   themeSection: {
-    marginVertical: 8,
+    marginTop: 4,
   },
   themePreviews: {
     flexDirection: 'row',

@@ -41,13 +41,13 @@ export function GetStartedSlide({
         <View
           style={[
             styles.iconBackground,
-            { backgroundColor: theme.colors.primary + '15' },
+            { backgroundColor: theme.colors.primaryContainer },
           ]}
         >
           <MaterialCommunityIcons
             name={slide.icon as any}
             size={64}
-            color={theme.colors.primary}
+            color={theme.colors.onPrimaryContainer}
           />
         </View>
       </View>
