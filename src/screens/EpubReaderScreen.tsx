@@ -7,6 +7,7 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -88,6 +89,7 @@ export default function EpubReaderScreen() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [toc, setToc] = useState<TocItem[]>([]);
+  const [tocSearchQuery, setTocSearchQuery] = useState('');
   const [currentLocation, setCurrentLocation] = useState('');
   const [currentSection, setCurrentSection] = useState('');
   const [progress, setProgress] = useState(0);
@@ -312,14 +314,33 @@ export default function EpubReaderScreen() {
 
   useEffect(() => {
     // Auto-hide controls after 5 seconds (increased from 3)
+    // Don't hide when searching or search modal is visible
     const timer = setTimeout(() => {
-      if (controlsVisible) {
+      if (controlsVisible && !isSearching && !searchVisible) {
         hideControls();
       }
     }, 5000);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [controlsVisible]);
+  }, [controlsVisible, isSearching, searchVisible]);
+
+  // Log when TOC modal opens
+  useEffect(() => {
+    if (tocVisible) {
+      console.log('[TOC MODAL] =======================================');
+      console.log('[TOC MODAL] Modal opened');
+      console.log('[TOC MODAL] TOC items count:', toc.length);
+      console.log(
+        '[TOC MODAL] First 3 items:',
+        JSON.stringify(
+          toc.slice(0, 3).map(i => ({ label: i.label, href: i.href })),
+          null,
+          2,
+        ),
+      );
+      console.log('[TOC MODAL] =======================================');
+    }
+  }, [tocVisible, toc]);
 
   const hideControls = () => {
     console.log('Hiding controls');
@@ -344,6 +365,11 @@ export default function EpubReaderScreen() {
     if (!book) return;
     try {
       const data = JSON.parse(event.nativeEvent.data);
+      console.log(
+        '[EpubReader] Received message from WebView:',
+        data.type,
+        data,
+      );
       switch (data.type) {
         case 'location':
           setCurrentLocation(data.cfi);
@@ -355,6 +381,14 @@ export default function EpubReaderScreen() {
           );
           break;
         case 'toc':
+          console.log('[TOC RECEIVED] =======================================');
+          console.log('[TOC RECEIVED] TOC data received from WebView');
+          console.log('[TOC RECEIVED] Number of items:', data.toc?.length || 0);
+          console.log(
+            '[TOC RECEIVED] First 3 items:',
+            JSON.stringify(data.toc?.slice(0, 3), null, 2),
+          );
+          console.log('[TOC RECEIVED] =======================================');
           setToc(data.toc);
           break;
         case 'rendered':
@@ -376,6 +410,18 @@ export default function EpubReaderScreen() {
             console.log('Showing controls from click');
             showControls();
           }
+          break;
+        case 'scrollEnd':
+          // Show toast hint when user tries to scroll past end of chapter
+          console.log('[EpubReader] Scroll end message received from WebView');
+          console.log(
+            '[EpubReader] Setting toast message:',
+            data.message || '👆 Swipe left for next chapter',
+          );
+          console.log('[EpubReader] Current toastVisible state:', toastVisible);
+          setToastMessage(data.message || '👆 Swipe left for next chapter');
+          setToastVisible(true);
+          console.log('[EpubReader] Toast should now be visible');
           break;
         case 'cycleTheme':
           console.log('WebView: Cycle theme request received');
@@ -405,11 +451,20 @@ export default function EpubReaderScreen() {
             '🔍 [React Native] Results data:',
             JSON.stringify(data.results?.slice(0, 3), null, 2),
           );
+
+          // Clear search timeout if exists
+          if ((handleSearch as any)._timeout) {
+            clearTimeout((handleSearch as any)._timeout);
+            (handleSearch as any)._timeout = null;
+          }
+
           if (data.error) {
             console.error(
               '🔍 [React Native] Search error from WebView:',
               data.error,
             );
+            setToastMessage('Search error: ' + data.error);
+            setToastVisible(true);
           }
           setIsSearching(false);
           setSearchResults(data.results || []);
@@ -440,7 +495,9 @@ export default function EpubReaderScreen() {
   };
 
   const goToLocation = (href: string) => {
-    console.log('Navigating to TOC item:', href);
+    console.log('[goToLocation] =======================================');
+    console.log('[goToLocation] Called with href:', href);
+    console.log('[goToLocation] webviewRef exists:', !!webviewRef.current);
     // Escape single quotes and backslashes in href to prevent breaking the JavaScript string
     const escapedHref = href.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     webviewRef.current?.injectJavaScript(`
@@ -597,41 +654,116 @@ export default function EpubReaderScreen() {
     setIsSearching(true);
     setSearchResults([]);
 
+    // Show controls to ensure search UI remains visible
+    if (!controlsVisible) {
+      showControls();
+    }
+
     const escapedQuery = searchQuery.replace(/'/g, "\\'");
     console.log('🔍 Escaped query:', escapedQuery);
 
+    // Set a timeout to handle cases where search hangs
+    const searchTimeout = setTimeout(() => {
+      console.log('🔍 Search timeout - forcing end of search');
+      setIsSearching(false);
+      setToastMessage('Search timed out. Please try again.');
+      setToastVisible(true);
+    }, 30000); // 30 second timeout
+
     webviewRef.current?.injectJavaScript(`
       (function() {
-        console.log('🔍 [WebView] Starting search for: ${escapedQuery}');
-        if (window.book) {
-          console.log('🔍 [WebView] Book available, calling search...');
-          window.book.search('${escapedQuery}').then(function(results) {
-            console.log('🔍 [WebView] Search completed. Results:', JSON.stringify(results, null, 2));
-            console.log('🔍 [WebView] Found', results.length, 'matches');
+        console.log('🔍 [WebView] Starting custom search for: ${escapedQuery}');
+
+        async function performSearch() {
+          const results = [];
+          const query = '${escapedQuery}'.toLowerCase();
+
+          if (!window.book) {
+            console.error('🔍 [WebView] Book not available');
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'searchResults',
+              results: [],
+              error: 'Book not loaded'
+            }));
+            return;
+          }
+
+          try {
+            // Get all spine items (chapters)
+            const spine = window.book.spine || window.book.package?.spine;
+            if (!spine) {
+              console.error('🔍 [WebView] Spine not available');
+              window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: 'searchResults',
+                results: [],
+                error: 'Book structure not available'
+              }));
+              return;
+            }
+
+            const spineItems = spine.items || spine.spine_items || [];
+            console.log('🔍 [WebView] Searching through', spineItems.length, 'chapters');
+
+            // Search through each chapter
+            for (let i = 0; i < spineItems.length; i++) {
+              const item = spineItems[i];
+              try {
+                // Load chapter content
+                const chapter = window.book.spine.get(item.href);
+                if (!chapter) continue;
+
+                const content = await chapter.load();
+                const text = content ? content.toString() : '';
+                const lowerText = text.toLowerCase();
+
+                // Find all occurrences
+                let index = lowerText.indexOf(query);
+                while (index !== -1) {
+                  // Get context around the match
+                  const start = Math.max(0, index - 50);
+                  const end = Math.min(text.length, index + query.length + 50);
+                  const excerpt = text.substring(start, end);
+
+                  // Create CFI for this location
+                  const cfi = chapter.cfiFromRange ? chapter.cfiFromRange(index, index + query.length) : item.href;
+
+                  results.push({
+                    cfi: cfi,
+                    excerpt: '...' + excerpt + '...',
+                    section: item.label || item.id || ('Chapter ' + (i + 1))
+                  });
+
+                  // Find next occurrence
+                  index = lowerText.indexOf(query, index + 1);
+                }
+              } catch(e) {
+                console.log('🔍 [WebView] Error searching chapter', i, ':', e.message);
+              }
+            }
+
+            console.log('🔍 [WebView] Search completed. Found', results.length, 'matches');
             window.ReactNativeWebView.postMessage(JSON.stringify({
               type: 'searchResults',
               results: results,
               query: '${escapedQuery}'
             }));
-          }).catch(function(err) {
-            console.error('🔍 [WebView] Search error:', err);
+          } catch(e) {
+            console.error('🔍 [WebView] Search error:', e);
             window.ReactNativeWebView.postMessage(JSON.stringify({
               type: 'searchResults',
               results: [],
-              error: err.message
+              error: e.message || 'Search failed'
             }));
-          });
-        } else {
-          console.error('🔍 [WebView] Book not available for search');
-          window.ReactNativeWebView.postMessage(JSON.stringify({
-            type: 'searchResults',
-            results: [],
-            error: 'Book not loaded'
-          }));
+          }
         }
+
+        performSearch();
       })();
       true;
     `);
+
+    // Store timeout reference to clear it when results arrive
+    (handleSearch as any)._timeout = searchTimeout;
   };
 
   const goToSearchResult = (cfi: string) => {
@@ -1175,13 +1307,60 @@ export default function EpubReaderScreen() {
 
             // For scrolled mode, also listen to scroll events for progress updates
             window.rendition.on("rendered", function(section) {
+              console.log('[EPUB Scroll] rendered event fired, looking for iframe...');
               var iframe = document.querySelector('iframe');
+              console.log('[EPUB Scroll] iframe found:', !!iframe, 'contentDocument:', iframe ? !!iframe.contentDocument : 'N/A');
+
               if (iframe && iframe.contentDocument) {
                 var iframeDoc = iframe.contentDocument;
+                var iframeWin = iframe.contentWindow;
+                var iframeBody = iframeDoc.body;
+                var scrollEl = iframeDoc.scrollingElement || iframeDoc.documentElement || iframeBody;
+
+                console.log('[EPUB Scroll] iframeDoc body:', !!iframeBody, 'scrollHeight:', iframeBody ? iframeBody.scrollHeight : 'N/A');
+                console.log('[EPUB Scroll] scrollingElement:', !!iframeDoc.scrollingElement);
+                console.log('[EPUB Scroll] scrollEl:', scrollEl.tagName, 'scrollHeight:', scrollEl.scrollHeight);
+
+                // Scroll end detection variables - use closure to persist across renders
+                if (!window._scrollEndState) {
+                  window._scrollEndState = {
+                    lastScrollTop: 0,
+                    endToastShown: false
+                  };
+                }
+                var scrollState = window._scrollEndState;
+                var scrollTimeout;
+
                 var scrollHandler = function() {
-                  var scrollTop = iframeDoc.documentElement.scrollTop || iframeDoc.body.scrollTop;
-                  var scrollHeight = iframeDoc.documentElement.scrollHeight || iframeDoc.body.scrollHeight;
-                  var clientHeight = iframeDoc.documentElement.clientHeight || iframeDoc.body.clientHeight;
+                  // Try multiple sources for scroll position
+                  var scrollTop = scrollEl.scrollTop || iframeWin.pageYOffset || 0;
+                  var scrollHeight = scrollEl.scrollHeight || Math.max(iframeBody.scrollHeight, iframeBody.offsetHeight) || 0;
+                  var clientHeight = scrollEl.clientHeight || iframeWin.innerHeight || 0;
+
+                  // Check for scroll end (within 50px of bottom)
+                  var isAtBottom = (scrollTop + clientHeight) >= (scrollHeight - 50);
+                  var scrollingDown = scrollTop > scrollState.lastScrollTop;
+                  var canScroll = scrollHeight > clientHeight + 10; // At least 10px scrollable
+
+                  console.log('[EPUB Scroll] scrollTop:', scrollTop, 'scrollHeight:', scrollHeight, 'clientHeight:', clientHeight, 'isAtBottom:', isAtBottom, 'scrollingDown:', scrollingDown, 'endToastShown:', scrollState.endToastShown, 'canScroll:', canScroll);
+
+                  // Detect scroll end - trying to scroll down while at bottom
+                  if (isAtBottom && scrollingDown && !scrollState.endToastShown && canScroll) {
+                    console.log('[EPUB Scroll] END OF SCROLL DETECTED! Sending scrollEnd message');
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                      type: 'scrollEnd',
+                      message: '👆 Swipe left for next chapter'
+                    }));
+                    scrollState.endToastShown = true;
+                    setTimeout(function() {
+                      console.log('[EPUB Scroll] Resetting endToastShown flag');
+                      scrollState.endToastShown = false;
+                    }, 3000);
+                  }
+
+                  scrollState.lastScrollTop = scrollTop;
+
+                  // Calculate scroll percentage for progress
                   var scrollPercentage = scrollHeight > clientHeight ? scrollTop / (scrollHeight - clientHeight) : 0;
 
                   // Calculate overall progress
@@ -1212,7 +1391,68 @@ export default function EpubReaderScreen() {
                     }));
                   }
                 };
-                iframeDoc.addEventListener('scroll', scrollHandler, { passive: true });
+
+                // Remove old listener if exists to prevent duplicates
+                if (window._iframeScrollHandler) {
+                  iframeDoc.removeEventListener('scroll', window._iframeScrollHandler);
+                  console.log('[EPUB Scroll] Removed old scroll listener');
+                }
+
+                // Use debounced scroll handler
+                var debouncedScrollHandler = function() {
+                  clearTimeout(scrollTimeout);
+                  scrollTimeout = setTimeout(scrollHandler, 100);
+                };
+                window._iframeScrollHandler = debouncedScrollHandler;
+
+                // Attach to both document and window for better coverage
+                iframeDoc.addEventListener('scroll', debouncedScrollHandler, { passive: true });
+                iframeWin.addEventListener('scroll', debouncedScrollHandler, { passive: true });
+                console.log('[EPUB Scroll] Scroll listeners attached to iframe document and window');
+
+                // Also add touch-based detection as fallback for mobile
+                var touchStartY = 0;
+                iframeDoc.addEventListener('touchstart', function(e) {
+                  touchStartY = e.touches[0].clientY;
+                  console.log('[EPUB Scroll] touchstart at Y:', touchStartY);
+                }, { passive: true });
+
+                iframeDoc.addEventListener('touchend', function(e) {
+                  var touchEndY = e.changedTouches[0].clientY;
+                  var swipeUp = touchStartY > touchEndY + 30; // 30px threshold
+
+                  // Get current scroll position
+                  var scrollTop = scrollEl.scrollTop || iframeWin.pageYOffset || 0;
+                  var scrollHeight = scrollEl.scrollHeight || iframeBody.scrollHeight || 0;
+                  var clientHeight = scrollEl.clientHeight || iframeWin.innerHeight || 0;
+                  var isAtBottom = (scrollTop + clientHeight) >= (scrollHeight - 50);
+                  var canScroll = scrollHeight > clientHeight + 10;
+
+                  console.log('[EPUB Scroll] touchend - swipeUp:', swipeUp, 'isAtBottom:', isAtBottom, 'canScroll:', canScroll, 'endToastShown:', scrollState.endToastShown);
+
+                  if (swipeUp && isAtBottom && !scrollState.endToastShown && canScroll) {
+                    console.log('[EPUB Scroll] TOUCH END OF SCROLL DETECTED!');
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                      type: 'scrollEnd',
+                      message: '👆 Swipe left for next chapter'
+                    }));
+                    scrollState.endToastShown = true;
+                    setTimeout(function() {
+                      scrollState.endToastShown = false;
+                    }, 3000);
+                  }
+                }, { passive: true });
+                console.log('[EPUB Scroll] Touch listeners attached to iframe');
+
+                // Do an initial scroll check to verify metrics
+                setTimeout(function() {
+                  var initialScrollTop = scrollEl.scrollTop || iframeWin.pageYOffset || 0;
+                  var initialScrollHeight = scrollEl.scrollHeight || iframeBody.scrollHeight || 0;
+                  var initialClientHeight = scrollEl.clientHeight || iframeWin.innerHeight || 0;
+                  console.log('[EPUB Scroll] INITIAL CHECK - scrollTop:', initialScrollTop, 'scrollHeight:', initialScrollHeight, 'clientHeight:', initialClientHeight, 'scrollable:', initialScrollHeight > initialClientHeight);
+                }, 500);
+              } else {
+                console.log('[EPUB Scroll] ERROR: iframe or contentDocument not available!');
               }
             });
 
@@ -1408,8 +1648,35 @@ export default function EpubReaderScreen() {
     );
   }
 
+  // Recursive function to filter TOC items based on search query
+  const filterTocItems = (items: TocItem[], query: string): TocItem[] => {
+    if (!query.trim()) return items;
+
+    const lowerQuery = query.toLowerCase();
+    const filtered: TocItem[] = [];
+
+    for (const item of items) {
+      const matchesLabel = item.label?.toLowerCase().includes(lowerQuery);
+      const filteredSubitems = item.subitems
+        ? filterTocItems(item.subitems, query)
+        : [];
+
+      if (matchesLabel || filteredSubitems.length > 0) {
+        filtered.push({
+          ...item,
+          subitems: filteredSubitems,
+        });
+      }
+    }
+
+    return filtered;
+  };
+
   // Recursive function to render TOC items with proper nesting
   const renderTocItems = (items: TocItem[], level: number) => {
+    console.log(
+      `[renderTocItems] Rendering ${items.length} items at level ${level}`,
+    );
     return items.map((item, index) => {
       // Check if this item is the current active chapter
       const isActive =
@@ -1422,20 +1689,59 @@ export default function EpubReaderScreen() {
           item.href.includes(currentSection.split('#')[0]));
 
       return (
-        <View key={`${level}-${index}`}>
-          <Pressable
+        <View key={`${level}-${index}-${item.href || 'no-href'}`}>
+          <TouchableOpacity
+            activeOpacity={0.6}
             onPress={() => {
-              console.log('TOC item PRESSED:', item.label, 'href:', item.href);
-              goToLocation(item.href);
-              setTocVisible(false);
+              console.log(
+                '[TOC CLICK] =======================================',
+              );
+              console.log('[TOC CLICK] SECTION FROM FILE:');
+              console.log('[TOC CLICK] - Label:', item.label);
+              console.log('[TOC CLICK] - Href:', item.href);
+              console.log('[TOC CLICK] - ID:', (item as any).id);
+              console.log('[TOC CLICK] - Level:', level);
+              console.log(
+                '[TOC CLICK] - Has subitems:',
+                !!(item.subitems && item.subitems.length > 0),
+              );
+              console.log(
+                '[TOC CLICK] - Subitems count:',
+                item.subitems?.length || 0,
+              );
+              console.log('[TOC CLICK] FULL ITEM OBJECT:');
+              console.log('[TOC CLICK]', JSON.stringify(item, null, 2));
+              console.log('[TOC CLICK] ---');
+              console.log('[TOC CLICK] Current section:', currentSection);
+              console.log('[TOC CLICK] TOC visible state:', tocVisible);
+
+              if (item.href) {
+                console.log(
+                  '[TOC CLICK] ✓ Item has href, navigating to:',
+                  item.href,
+                );
+                console.log('[TOC CLICK] Calling goToLocation...');
+                goToLocation(item.href);
+                console.log('[TOC CLICK] Closing TOC modal...');
+                setTocVisible(false);
+                console.log('[TOC CLICK] Clearing search query...');
+                setTocSearchQuery('');
+                console.log('[TOC CLICK] ✓ Navigation complete');
+              } else {
+                console.log(
+                  '[TOC CLICK] ✗ ERROR: TOC item has no href, cannot navigate',
+                );
+                console.log('[TOC CLICK] This section cannot be navigated to');
+              }
+              console.log(
+                '[TOC CLICK] =======================================',
+              );
             }}
-            style={({ pressed }) => [
+            style={[
               styles.tocItem,
               { paddingLeft: 16 + level * 20 },
               isActive && { backgroundColor: theme.colors.primary + '20' },
-              pressed && { backgroundColor: theme.colors.primary + '30' },
             ]}
-            android_ripple={{ color: theme.colors.primary + '20' }}
           >
             <View style={styles.tocItemContent}>
               <Text
@@ -1461,7 +1767,7 @@ export default function EpubReaderScreen() {
                 />
               )}
             </View>
-          </Pressable>
+          </TouchableOpacity>
           {item.subitems &&
             item.subitems.length > 0 &&
             renderTocItems(item.subitems, level + 1)}
@@ -1514,6 +1820,9 @@ export default function EpubReaderScreen() {
                   }));
                 };
               }
+
+              // Note: Scroll end detection is handled in the iframe scroll handler
+              // inside the rendition "rendered" event above (line ~1188)
             })();
             document.addEventListener('message', function(e) {
               eval(e.data);
@@ -1640,154 +1949,6 @@ export default function EpubReaderScreen() {
                 />
               </Menu>
             </View>
-            {/* Search Row */}
-            <View style={styles.searchBarRow}>
-              <TextInput
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                mode="flat"
-                dense
-                placeholder="Search in book..."
-                onSubmitEditing={handleSearch}
-                style={[
-                  styles.topSearchInput,
-                  { backgroundColor: theme.colors.surfaceVariant },
-                ]}
-                left={<TextInput.Icon icon="magnify" />}
-                right={
-                  searchQuery ? (
-                    <TextInput.Icon
-                      icon="close"
-                      onPress={() => setSearchQuery('')}
-                    />
-                  ) : undefined
-                }
-              />
-            </View>
-            {/* Search Results Dropdown */}
-            {/* Search Loading Indicator */}
-            {isSearching && (
-              <View style={styles.searchLoadingContainer}>
-                <ActivityIndicator size="small" color={theme.colors.primary} />
-                <Text
-                  style={[
-                    styles.searchLoadingText,
-                    { color: theme.colors.onSurfaceVariant },
-                  ]}
-                >
-                  Searching...
-                </Text>
-              </View>
-            )}
-
-            {/* Search Results Dropdown */}
-            {!isSearching && searchResults.length > 0 && (
-              <Surface
-                style={[
-                  styles.searchResultsDropdown,
-                  { backgroundColor: theme.colors.surface },
-                ]}
-                elevation={4}
-              >
-                <View style={styles.searchResultsHeader}>
-                  <View style={styles.searchResultsTitle}>
-                    <IconButton
-                      icon="magnify"
-                      size={16}
-                      iconColor={theme.colors.primary}
-                    />
-                    <Text
-                      variant="labelMedium"
-                      style={{ color: theme.colors.primary }}
-                    >
-                      {searchResults.length} result
-                      {searchResults.length !== 1 ? 's' : ''} found
-                    </Text>
-                  </View>
-                  <IconButton
-                    icon="close"
-                    size={16}
-                    onPress={() => setSearchResults([])}
-                  />
-                </View>
-                <ScrollView style={styles.searchResultsList}>
-                  {searchResults.map((result, index) => (
-                    <Pressable
-                      key={index}
-                      onPress={() => {
-                        console.log('🔍 Result clicked:', result.cfi);
-                        if (result.cfi) {
-                          goToSearchResult(result.cfi);
-                        }
-                      }}
-                      style={({ pressed }) => [
-                        styles.searchResultRow,
-                        pressed && {
-                          backgroundColor: theme.colors.primary + '15',
-                        },
-                      ]}
-                      android_ripple={{ color: theme.colors.primary + '20' }}
-                    >
-                      <View style={styles.searchResultContent}>
-                        <Text
-                          style={[
-                            styles.searchResultSnippet,
-                            { color: theme.colors.onSurface },
-                          ]}
-                          numberOfLines={2}
-                        >
-                          {highlightSearchTerm(
-                            result.excerpt || result.text || 'No preview',
-                            searchQuery,
-                          )}
-                        </Text>
-                        {result.section && (
-                          <Text
-                            style={[
-                              styles.searchResultSection,
-                              { color: theme.colors.onSurfaceVariant },
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {result.section}
-                          </Text>
-                        )}
-                      </View>
-                      <IconButton
-                        icon="chevron-right"
-                        size={16}
-                        iconColor={theme.colors.onSurfaceVariant}
-                      />
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </Surface>
-            )}
-
-            {/* No Results Message */}
-            {!isSearching && searchQuery && searchResults.length === 0 && (
-              <Surface
-                style={[
-                  styles.searchNoResults,
-                  { backgroundColor: theme.colors.surface },
-                ]}
-                elevation={2}
-              >
-                <IconButton
-                  icon="magnify-close"
-                  size={24}
-                  iconColor={theme.colors.onSurfaceVariant}
-                />
-                <Text
-                  style={[
-                    styles.searchNoResultsText,
-                    { color: theme.colors.onSurfaceVariant },
-                  ]}
-                >
-                  No results found for "{searchQuery}"
-                </Text>
-              </Surface>
-            )}
           </View>
 
           {/* Bottom Bar */}
@@ -1840,7 +2001,11 @@ export default function EpubReaderScreen() {
       <Portal>
         <Modal
           visible={tocVisible}
-          onDismiss={() => setTocVisible(false)}
+          onDismiss={() => {
+            console.log('[TOC MODAL] Modal dismissed');
+            setTocVisible(false);
+            setTocSearchQuery('');
+          }}
           dismissable
           dismissableBackButton
           contentContainerStyle={[
@@ -1851,14 +2016,60 @@ export default function EpubReaderScreen() {
           <Text variant="titleLarge" style={styles.tocTitle}>
             Table of Contents
           </Text>
+          {/* TOC Search */}
+          <View style={styles.tocSearchContainer}>
+            <TextInput
+              value={tocSearchQuery}
+              onChangeText={setTocSearchQuery}
+              mode="outlined"
+              dense
+              placeholder="Search chapters..."
+              style={styles.tocSearchInput}
+              left={<TextInput.Icon icon="magnify" />}
+              right={
+                tocSearchQuery ? (
+                  <TextInput.Icon
+                    icon="close"
+                    onPress={() => setTocSearchQuery('')}
+                  />
+                ) : undefined
+              }
+            />
+          </View>
           <Divider />
-          <ScrollView style={styles.tocScrollView}>
+          {toc.length > 0 && (
+            <Text
+              style={{
+                fontSize: 12,
+                color: theme.colors.onSurfaceVariant,
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+              }}
+            >
+              {tocSearchQuery
+                ? `Found ${filterTocItems(toc, tocSearchQuery).length} chapters`
+                : `Tap a chapter to navigate`}
+            </Text>
+          )}
+          <ScrollView
+            style={styles.tocScrollView}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            scrollEnabled={true}
+            nestedScrollEnabled={true}
+          >
             {toc.length === 0 ? (
               <Text style={styles.emptyTocText}>
                 No table of contents available
               </Text>
             ) : (
-              renderTocItems(toc, 0)
+              (() => {
+                const filteredItems = filterTocItems(toc, tocSearchQuery);
+                console.log(
+                  `[TOC RENDER] Rendering ${filteredItems.length} items (search: "${tocSearchQuery}")`,
+                );
+                return renderTocItems(filteredItems, 0);
+              })()
             )}
           </ScrollView>
         </Modal>
@@ -2745,10 +2956,20 @@ const styles = StyleSheet.create({
   tocTitle: {
     marginBottom: 16,
   },
+  tocSearchContainer: {
+    marginBottom: 12,
+  },
+  tocSearchInput: {
+    height: 44,
+  },
   tocItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderRadius: 4,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginVertical: 2,
+    backgroundColor: 'transparent',
+    minHeight: 56,
+    justifyContent: 'center',
   },
   tocItemText: {
     fontSize: 16,
