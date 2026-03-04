@@ -182,6 +182,13 @@ src/
 - Inject CSS for theming (day/night/sepia)
 - JavaScript bridge for React Native <-> WebView communication
 - Track reading position via CFI (Canonical Fragment Identifier)
+- **Table of Contents (TOC) with search functionality**
+  - Real-time chapter filtering
+  - Hierarchical display with nested sections
+  - Click to navigate to any chapter
+  - Search within TOC for quick chapter finding
+- **Header controls during search** - Header stays visible when searching
+- **Scroll end detection** - Shows hint when reaching end of chapter
 
 ### 2. PDF Reader
 - Use WebView with PDF.js (Mozilla's PDF library) for rendering
@@ -234,6 +241,7 @@ src/
 - [x] Proper button positioning in onboarding footer
 - [x] Dark/Light theme support
 - [x] Default font size: 12px
+- [x] Search moved to TOC modal (removed from header)
 
 ## Core Features
 - [x] EPUB reader with epub.js WebView
@@ -243,6 +251,7 @@ src/
 - [x] Bookmarks and annotations
 - [x] Reading progress tracking
 - [x] Reading statistics
+- [x] TOC search and navigation - Search/filter chapters in TOC
 
 ## Default Books
 - [x] GitHub-hosted default EPUB files
@@ -262,5 +271,22 @@ src/
 - [ ] Unit tests
 - [ ] E2E tests
 
+## Known Issues / TODO
+- [ ] iOS build testing
+- [ ] Cloud sync implementation
+- [ ] MOBI format support
+- [ ] Unit tests
+- [ ] E2E tests
+- [ ] TOC item click navigation (in progress - logging added for debugging)
+
+## Recent Changes (2026-03-04)
+- Added TOC search functionality in EPUB reader
+- Moved search from header to TOC modal
+- Added extensive logging for debugging TOC navigation
+- Improved touch handling with TouchableOpacity
+- Enhanced TOC item styling for better touch targets
+- Fixed header auto-hide during search operations
+- Added scroll end detection with toast hints
+
 ## Last Updated
-2026-03-03 - Splash screen, onboarding UI fixes, default font size changes
+2026-03-04 - TOC search, improved logging, touch handling fixes
